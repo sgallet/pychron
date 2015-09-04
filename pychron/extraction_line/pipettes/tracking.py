@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,33 +12,34 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 import cPickle as pickle
 
 from traits.api import Str, Int
 
-#============= standard library imports ========================
+# ============= standard library imports ========================
 import os
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
 from pychron.loggable import Loggable
 from pychron.paths import paths
 from pychron.core.helpers.datetime_tools import generate_datetimestamp
+
 
 class PipetteTracker(Loggable):
     inner = Str
     outer = Str
     counts = Int
     _shot_loaded = False
-#     def __init__(self, *args, **kw):
-#         super(PipetteTracker, self).__init__(*args, **kw)
-#         self.load()
+    #     def __init__(self, *args, **kw):
+    #         super(PipetteTracker, self).__init__(*args, **kw)
+    #         self.load()
 
     def check_shot(self, name):
-        '''
+        """
             check shot called only when valve opens
-        '''
+        """
         if name == self.inner:
             self._shot_loaded = True
             return True
@@ -56,23 +57,23 @@ class PipetteTracker(Loggable):
         self.debug('increment shot count {}'.format(self.counts))
         self.dump()
 
-#===============================================================================
-# persistence
-#===============================================================================
+    # ===============================================================================
+    # persistence
+    # ===============================================================================
     def load(self):
         p = self._get_path_id()
         if os.path.isfile(p):
-            with open(p, 'r') as fp:
+            with open(p, 'r') as rfile:
                 try:
-                    params = pickle.load(fp)
+                    params = pickle.load(rfile)
                     self._load(params)
                 except (pickle.PickleError, OSError):
                     pass
 
     def dump(self):
         p = self._get_path_id()
-        with open(p, 'w') as fp:
-            pickle.dump(self._dump(), fp)
+        with open(p, 'w') as wfile:
+            pickle.dump(self._dump(), wfile)
             self.debug('saved current shot count {}'.format(self.counts))
 
     def _load(self, params):
@@ -85,18 +86,21 @@ class PipetteTracker(Loggable):
 
             self.counts = cnts
             self.debug('loaded current shot count {} time:{}'.format(self.counts,
-                                                                     last_shot_time
-                                                                     ))
+                                                                     last_shot_time))
 
     def _dump(self):
         d = dict(
-               counts=self.counts,
-               last_shot_time=generate_datetimestamp()
-               )
+            counts=self.counts,
+            last_shot_time=generate_datetimestamp())
 
         return d
 
     def _get_path_id(self):
-        return os.path.join(paths.hidden_dir, 'pipette-{}_{}'.format(self.inner, self.outer))
+        #handle legacy format
+        p = os.path.join(paths.hidden_dir, 'pipette-{}_{}'.format(self.inner, self.outer))
+        if not os.path.isfile(p):
+            p = os.path.join(paths.hidden_dir, '{}_{}-{}'.format(self.name, self.inner, self.outer))
 
-#============= EOF =============================================
+        return p
+
+# ============= EOF =============================================

@@ -1,20 +1,20 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from traits.api import HasTraits, Instance, Button, Bool, List, Str, Property, Any, \
     Enum, File, Int
 from traitsui.api import View, Item, EnumEditor, HGroup, ListEditor, InstanceEditor, Label, Spring, \
@@ -22,14 +22,15 @@ from traitsui.api import View, Item, EnumEditor, HGroup, ListEditor, InstanceEdi
 from pyface.constant import OK
 from pyface.file_dialog import FileDialog
 from pyface.timer.do_later import do_later
-#============= standard library imports ========================
+# ============= standard library imports ========================
 import numpy as np
 import csv
 import os
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
 
 from pychron.graph.graph import Graph
-from pychron.graph.regression_graph import StackedRegressionGraph, RegressionGraph
+from pychron.graph.regression_graph import RegressionGraph
+from pychron.graph.stacked_regression_graph import StackedRegressionGraph
 from pychron.pychron_constants import FIT_TYPES, NULL_STR, DELIMITERS
 from pychron.paths import paths
 from pychron.loggable import Loggable
@@ -88,13 +89,11 @@ class StatsGraph(HasTraits):
     window_y = Int
     stats = Str
     sig_figs = Int(3)
-    esig_figs = Int(4)
 
     def _update_stats(self, new):
         self.stats = ''
         #        new = reversed(new)
-        ss = ['{}. {}'.format(i + 1, ni.tostring(sig_figs=self.sig_figs,
-                                                 error_sig_figs=self.esig_figs)) for i, ni in enumerate(new)]
+        ss = ['{}. {}'.format(i + 1, ni.tostring(sig_figs=self.sig_figs)) for i, ni in enumerate(new)]
         self.stats = '\n'.join(ss)
 
     def _graph_changed(self):
@@ -156,9 +155,9 @@ class CSVGrapher(Loggable):
                   window_x=40,
                   window_y=20
         )
-        with open(p, 'r') as fp:
+        with open(p, 'r') as rfile:
             # gather data
-            reader = csv.reader(fp)
+            reader = csv.reader(rfile)
             header = reader.next()
             groups = self._parse_data(reader)
             '''
@@ -204,9 +203,9 @@ class CSVGrapher(Loggable):
     def remove_column_selector(self, cs):
         self.data_selectors.remove(cs)
 
-    #===============================================================================
+    # ===============================================================================
     # handlers
-    #===============================================================================
+    # ===============================================================================
     def _open_button_fired(self):
         self.data_selectors = []
         #        p = '/Users/ross/Sandbox/csvdata.txt'
@@ -216,10 +215,10 @@ class CSVGrapher(Loggable):
         if dlg.open() == OK:
             self._path = dlg.path
 
-        with open(self._path, 'U') as fp:
+        with open(self._path, 'U') as rfile:
 
 
-            reader = csv.reader(fp, delimiter=self.delimiter)
+            reader = csv.reader(rfile, delimiter=self.delimiter)
             self.column_names = names = reader.next()
             try:
                 cs = DataSelector(column_names=names,
@@ -248,11 +247,11 @@ class CSVGrapher(Loggable):
                     break
                 lines.append(l)
             else:
-            #                print lines
-            #                for l in lines:
-            #                    print l
-            #                    print map(float, l)
-            #
+                #                print lines
+                #                for l in lines:
+                #                    print l
+                #                    print map(float, l)
+                #
                 data = np.array([map(float, l) for l in lines])
                 data = data.transpose()
                 groups.append(data)
@@ -261,13 +260,13 @@ class CSVGrapher(Loggable):
 
 
     def _plot_button_fired(self):
-        with open(self._path, 'U') as fp:
-            reader = csv.reader(fp, delimiter=self.delimiter)
+        with open(self._path, 'U') as rfile:
+            reader = csv.reader(rfile, delimiter=self.delimiter)
             _header = reader.next()
             groups = self._parse_data(reader)
             #            print groups
             for data in groups:
-            #                print data
+                #                print data
                 self._show_plot(data)
 
     def _show_plot(self, data):
@@ -335,9 +334,9 @@ class CSVGrapher(Loggable):
 
         show(gii)
 
-    #===============================================================================
+    # ===============================================================================
     # property get/set
-    #===============================================================================
+    # ===============================================================================
     def _get_file_name(self):
         if os.path.isfile(self._path):
             return os.path.relpath(self._path, paths.data_dir)
@@ -349,9 +348,9 @@ class CSVGrapher(Loggable):
             return os.path.basename(self._path)
         else:
             return ''
-            #===============================================================================
+            # ===============================================================================
             # views
-            #===============================================================================
+            # ===============================================================================
 
     def traits_view(self):
         v = View(Item('as_series'), Item('delimiter', editor=EnumEditor(values=DELIMITERS)),
@@ -378,4 +377,4 @@ if __name__ == '__main__':
     #    do_later(cs.quick_graph, '/Users/ross/Sandbox/baselines/scan011.txt')
     do_later(cs.quick_graph, '/Users/argonlab2/Pychrondata/data/spectrometer_scans/scan017.txt')
     cs.configure_traits()
-#============= EOF =============================================
+# ============= EOF =============================================

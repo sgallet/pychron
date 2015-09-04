@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,13 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 import copy
 
 from chaco.axis import DEFAULT_TICK_FORMATTER
 from chaco.base_xy_plot import BaseXYPlot
+from chaco.cmap_image_plot import CMapImagePlot
 from chaco.scatterplot import ScatterPlot
 from enable.colors import transparent_color
 from enable.enable_traits import LineStyle
@@ -31,8 +32,8 @@ from traitsui.api import View, Item, Group, VGroup, UItem, Heading, HGroup, Enum
 # from traitsui.editors.range_editor import RangeEditor
 # from numpy.core.numeric import Inf
 # from pychron.core.ui.double_spinner import DoubleSpinnerEditor
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 class EFloat(Float):
     enter_set = True
     auto_set = False
@@ -175,7 +176,7 @@ class Axis(HasTraits):
 
 class PlotEditor(HasTraits):
     plot = Any
-    analyses = Any
+    # analyses = Any
 
     xmin = EFloat
     xmax = EFloat
@@ -200,7 +201,6 @@ class PlotEditor(HasTraits):
     selected_renderer = Instance('RendererEditor')
     renderer_names = List
 
-
     def _selected_renderer_name_changed(self):
         self.selected_renderer = self._get_selected_renderer()
 
@@ -210,6 +210,8 @@ class PlotEditor(HasTraits):
             if k == self.selected_renderer_name:
                 if isinstance(r, ScatterPlot):
                     klass = ScatterRendererEditor
+                elif isinstance(r, CMapImagePlot):
+                    klass = CMapRendererEditor
                 else:
                     klass = LineRendererEditor
 
@@ -315,20 +317,20 @@ class PlotEditor(HasTraits):
             p.value_range.high_setting = self.ymax
             self.yauto = False
 
-    def _xauto_changed(self):
-        if self.xauto:
-            #p = self.plot
-            # dd = [a.uage for a in self.analyses]
-            dd=[a.get_value(self.index_attr) for a in self.analyses]
-            mid = [di.nominal_value - di.std_dev for di in dd]
-            mad = [di.nominal_value + di.std_dev for di in dd]
-            #mid=[di.nominal_value for di in dd]
-            #mad=[di.nominal_value for di in dd]
-            mi, ma = min(mid), max(mad)
-
-            p = self.auto_xpad * (ma - mi)
-            self.xmin = mi - p
-            self.xmax = ma + p
+    # def _xauto_changed(self):
+    #     if self.xauto:
+    #         #p = self.plot
+    #         # dd = [a.uage for a in self.analyses]
+    #         dd=[a.get_value(self.index_attr) for a in self.analyses]
+    #         mid = [di.nominal_value - di.std_dev for di in dd]
+    #         mad = [di.nominal_value + di.std_dev for di in dd]
+    #         #mid=[di.nominal_value for di in dd]
+    #         #mad=[di.nominal_value for di in dd]
+    #         mi, ma = min(mid), max(mad)
+    #
+    #         p = self.auto_xpad * (ma - mi)
+    #         self.xmin = mi - p
+    #         self.xmax = ma + p
 
     def traits_view(self):
         #renderers_grp = Group(
@@ -340,21 +342,22 @@ class PlotEditor(HasTraits):
             VGroup(UItem('selected_renderer_name',
                          editor=EnumEditor(name='renderer_names')),
                    UItem('selected_renderer', style='custom')),
-            label='Selected Plot')
+            label='Selected Dataset')
 
-        xlim_grp = HGroup(Item('xauto', label='Auto'),
-                          UItem('xmin', format_str='%0.4f',
-                                enabled_when='not xauto'),
-                          UItem('xmax', format_str='%0.4f',
-                                enabled_when='not xauto'),
-                          label='X Limits')
+        xlim_grp = HGroup(
+            # Item('xauto', label='Auto'),
+            UItem('xmin', format_str='%0.4f',
+                  enabled_when='not xauto'),
+            UItem('xmax', format_str='%0.4f',
+                  enabled_when='not xauto'),
+            label='X Limits')
         ylim_grp = HGroup(UItem('ymin', format_str='%0.4f'),
                           UItem('ymax', format_str='%0.4f'),
                           label='Y Limits')
-        xgrp=VGroup(xlim_grp,
-                    UItem('x_axis', style='custom'), label='X Axis')
-        ygrp=VGroup(ylim_grp,
-                   UItem('y_axis', style='custom'), label='Y Axis')
+        xgrp = VGroup(xlim_grp,
+                      UItem('x_axis', style='custom'), label='X Axis')
+        ygrp = VGroup(ylim_grp,
+                      UItem('y_axis', style='custom'), label='Y Axis')
 
         layout_grp = VGroup(
             Item('padding_left', label='Left'),
@@ -364,7 +367,7 @@ class PlotEditor(HasTraits):
             label='Padding')
 
         general_grp = Group(
-            xgrp,ygrp,
+            xgrp, ygrp,
             layout_grp,
             renderers_grp, layout='tabbed')
 
@@ -388,7 +391,9 @@ class RendererEditor(HasTraits):
         self.renderer.request_redraw()
 
     def _renderer_changed(self):
-        self.line_width = self.renderer.line_width
+        if hasattr(self.renderer, 'line_width'):
+            self.line_width = self.renderer.line_width
+
         self.visible = self.renderer.visible
         #self.color = self.renderer.color
         self._sync()
@@ -405,6 +410,17 @@ class RendererEditor(HasTraits):
             )
         )
         return v
+
+
+class CMapRendererEditor(RendererEditor):
+    renderer = Instance(CMapImagePlot)
+
+    def _renderer_changed(self):
+        self.visible = self.renderer.visible
+        self._sync()
+
+    def _get_group(self):
+        return Group()
 
 
 class LineRendererEditor(RendererEditor):
@@ -534,4 +550,4 @@ class AnnotationEditor(HasTraits):
         )
         return v
 
-        #============= EOF =============================================
+        # ============= EOF =============================================

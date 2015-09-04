@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,15 +12,31 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
-from traits.api import Event, Instance, on_trait_change
+# ============= enthought library imports =======================
+from traits.api import Event, Instance
 from chaco.abstract_overlay import AbstractOverlay
 from enable.base_tool import BaseTool
 from kiva.fonttools import Font
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
+
+def intersperse(m, delim):
+    """
+        intersperse ```delim``` in m
+         m=[1,2,3]
+         delim='---'
+         result=[1,'---',2,'---',3]
+
+    """
+    m=iter(m)
+    yield next(m)
+    for x in m:
+        yield delim
+        yield x
+
+
 class InfoInspector(BaseTool):
     metadata_changed = Event
     current_position = None
@@ -43,7 +59,7 @@ class InfoInspector(BaseTool):
         self.metadata_changed = True
 
     def assemble_lines(self):
-        return []
+        return
 
     def normal_mouse_leave(self, event):
         self.current_screen = None
@@ -52,26 +68,21 @@ class InfoInspector(BaseTool):
 
 
 class InfoOverlay(AbstractOverlay):
+    """
+        abstract class for displaying hover data
+    """
     tool = Instance(BaseTool)
     visible = False
 
-    '''
-        abstract class for displaying hover data
-        subclasses should implement _assemble_lines
-    '''
-
-    @on_trait_change('tool:metadata_changed')
-    def _update_(self, new):
-        if self.tool.current_position:
+    def _update_(self):
+        if self.tool.current_position is not None:
             self.visible = True
         else:
             self.visible = False
-
         self.request_redraw()
 
     def overlay(self, plot, gc, *args, **kw):
         with gc:
-        #            if self.visible:
             lines = self.tool.assemble_lines()
             if lines:
                 lines = [li for li in lines if li and li.strip()]
@@ -83,38 +94,51 @@ class InfoOverlay(AbstractOverlay):
         if not self.tool.current_screen:
             return
 
-        x, y = self.tool.current_screen
+        x, y = sx, sy = self.tool.current_screen
 
         gc.set_font(Font('Arial'))
         gc.set_fill_color((0.8, 0.8, 0.8))
 
         lws, lhs = zip(*[gc.get_full_text_extent(mi)[:2] for mi in lines])
 
-        lw = max(lws)+4
-        lh = sum(lhs) + len(lhs)*0.75
+        rect_width = max(lws) + 4
+        rect_height = (max(lhs)+2) * len(lhs)
 
-        xoffset = 12
-        yoffset = -10
+        xoffset = 5
+        yoffset = -5
         gc.translate_ctm(xoffset, yoffset)
-        # x += xoffset
-        # y -= yoffset
 
         # if the box doesnt fit in window
         # move left
         x2 = self.component.x2
-        if x+xoffset + lw> x2:
-            x = x2 - lw - xoffset-1
+        y2 = self.component.y2
 
-        h = lhs[0]
-        py = max(0, y - lh)
+        if x + xoffset + rect_width > x2:
+            x = x2 - rect_width - xoffset - 1
 
-        gc.rect(x,py, lw, lh)
+        # move down if to tall
+        # if y + yoffset + rect_height > y2:
+        #     y = y2 - rect_height - yoffset -1
+
+        # if current point within bounds of box, move box to left
+        if x < sx:
+            x = sx - rect_width - xoffset - 6
+
+        gc.translate_ctm(x, y-rect_height)
+        gc.rect(0, -2, rect_width, rect_height+4)
         gc.draw_path()
         gc.set_fill_color((0, 0, 0))
 
-        gc.translate_ctm(x+2,py+2)
+        h = max(lhs)+2
         for i, mi in enumerate(lines[::-1]):
             gc.set_text_position(0, h * i)
             gc.show_text(mi)
 
-#============= EOF =============================================
+    def _tool_changed(self, old, new):
+        if old:
+            old.on_trait_change(self._update_, 'metadata_changed', remove=True)
+
+        if new:
+            new.on_trait_change(self._update_, 'metadata_changed')
+
+# ============= EOF =============================================

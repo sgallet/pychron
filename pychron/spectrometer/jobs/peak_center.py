@@ -1,43 +1,47 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
+from traits.api import Float, Str
+# ============= standard library imports ========================
 import time
-from traits.api import Float
-#============= standard library imports ========================
-from numpy import max
-#============= local library imports  ==========================
+from numpy import max, argmax
+# ============= local library imports  ==========================
 from magnet_scan import MagnetScan
 from pychron.graph.graph import Graph
-from pychron.core.stats.peak_detection import calculate_peak_center
+from pychron.core.stats.peak_detection import calculate_peak_center, PeakCenterError
 from pychron.core.ui.gui import invoke_in_main_thread
 
 
-class PeakCenter(MagnetScan):
+class BasePeakCenter(MagnetScan):
+    title = 'Base Peak Center'
     center_dac = Float
-
+    reference_isotope = Str
     window = Float(0.015)
     step_width = Float(0.0005)
     min_peak_height = Float(1.0)
     canceled = False
-
-    #    data = None
+    show_label = False
     result = None
     directions = None
+
     _markup_idx = 1
+
+    def close_graph(self):
+        self.graph.close_ui()
 
     def cancel(self):
         self.canceled = True
@@ -54,6 +58,15 @@ class PeakCenter(MagnetScan):
         graph.clear()
         invoke_in_main_thread(self._graph_factory, graph=graph)
 
+        width = self.step_width
+        try:
+            if self.simulation:
+                width = 0.001
+        except AttributeError:
+            width = 0.001
+
+        smart_shift = False
+        center = None
         for i in range(ntries):
             if not self.isAlive():
                 break
@@ -62,51 +75,85 @@ class PeakCenter(MagnetScan):
                 graph.clear()
                 invoke_in_main_thread(self._graph_factory, graph=graph)
 
-            wnd = self.window
+            start, end = self._get_scan_parameters(i, center, smart_shift)
 
-            start = center_dac - wnd * (i + 1)
-            end = center_dac + wnd * (i + 1)
-            self.info('Scan parameters center={} start={} end={} step width={}'.format(center_dac, start, end,
-                                                                                       self.step_width))
-            invoke_in_main_thread(graph.set_x_limits,
-                                  min_=min([start, end]),
-                                  max_=max([start, end]))
-            #             graph.set_x_limits(min_=min([start, end]), max_=max([start, end]))
+            center, smart_shift, success = self.iteration(start, end, width)
+            if success:
+                invoke_in_main_thread(self._post_execute)
+                return center
 
-            width = self.step_width
-            try:
-                if self.simulation:
-                    width = 0.001
-            except AttributeError:
-                width = 0.001
+    def iteration(self, start, end, width):
+        """
+            returns center, success (float/None, bool)
+        """
+        graph = self.graph
 
-            #move to start position
-            delay=1
-            self.info('moving to starting dac {}. delay {} before continuing'.format(start, delay))
-            self.spectrometer.magnet.set_dac(start)
-            time.sleep(delay)
+        invoke_in_main_thread(graph.set_x_limits,
+                              min_=min([start, end]),
+                              max_=max([start, end]))
+
+        # move to start position
+        delay = 3
+        self.info('moving to starting dac {}. delay {} before continuing'.format(start, delay))
+        self.spectrometer.magnet.set_dac(start)
+        time.sleep(delay)
+
+        center, smart_shift, success = None, False, False
+        # cdd has been tripping during the previous move on obama when moving H1 from 34.5 to 39.7
+        # check if cdd is still active
+        if not self.spectrometer.get_detector_active('CDD'):
+            self.warning('CDD has tripped!')
+            self.cancel()
+        else:
 
             ok = self._do_scan(start, end, width, directions=self.directions, map_mass=False)
             self.debug('result of _do_scan={}'.format(ok))
+
             if ok and self.directions != 'Oscillate':
                 if not self.canceled:
                     dac_values = graph.get_data()
                     intensities = graph.get_data(axis=1)
 
-                    n = zip(dac_values, intensities)
-                    n = sorted(n, key=lambda x: x[0])
+                    n = sorted(zip(dac_values, intensities), key=lambda x: x[0])
                     dac_values, intensities = zip(*n)
 
-                    #                    self.data = (dac_values, intensities)
                     result = self._calculate_peak_center(dac_values, intensities)
                     self.debug('result of _calculate_peak_center={}'.format(result))
                     self.result = result
                     if result is not None:
                         xs, ys, mx, my = result
 
-                        center = xs[1]
+                        center, success = xs[1], True
                         invoke_in_main_thread(self._plot_center, xs, ys, mx, my, center)
-                        return center
+                    else:
+                        if max(intensities) > self.min_peak_height * 5:
+                            smart_shift = True
+
+                        idx = argmax(intensities)
+                        center, success = dac_values[idx], False
+
+        return center, smart_shift, success
+
+    def _get_scan_parameters(self, i, center_dac, smart_shift):
+        wnd = self.window
+        scalar = 1
+        if smart_shift:
+            i = 0
+        else:
+            if center_dac is None:
+                center_dac = self.center_dac
+            else:
+                scalar = 0.1
+
+        d = wnd * (i * scalar + 1)
+        start = center_dac - d
+        self.debug('get scan parameters. half-width={},window={}, i={}, scalar={}'.format(d, wnd, i, scalar))
+        end = center_dac + d
+
+        dev = abs(start - end)
+        self.info(
+            'Scan parameters center={:0.5f} width={:0.5f} ({:0.5f} - {:0.5f})'.format(center_dac, dev, start, end))
+        return start, end
 
     def _plot_center(self, xs, ys, mx, my, center):
         graph = self.graph
@@ -120,26 +167,25 @@ class PeakCenter(MagnetScan):
         graph.redraw()
 
     def _calculate_peak_center(self, x, y):
-        result = calculate_peak_center(x, y,
-                                       min_peak_height=self.min_peak_height)
-        if result is not None:
-            if isinstance(result, str):
-                self.warning(result)
-            else:
-                return result
+        try:
+            result = calculate_peak_center(x, y,
+                                           min_peak_height=self.min_peak_height)
+            return result
+        except PeakCenterError, e:
+            self.warning('Failed to find a valid peak. {}'.format(e))
 
-    #===============================================================================
+    # ===============================================================================
     # factories
-    #===============================================================================
+    # ===============================================================================
     def _graph_factory(self, graph=None):
         if graph is None:
             graph = Graph(
+                window_title=self.title,
                 container_dict=dict(padding=5,
                                     bgcolor='lightgray'))
 
         graph.new_plot(
             padding=[50, 5, 5, 50],
-            #                       title='{}'.format(self.title),
             xtitle='DAC (V)',
             ytitle='Intensity (fA)',
             show_legend='ul',
@@ -166,20 +212,20 @@ class PeakCenter(MagnetScan):
                          marker_size=4,
                          color='green')
 
-        #graph.plots[0].value_range.tight_bounds = False
+        if self.show_label:
+            graph.add_plot_label('{}@{}'.format(self.reference_isotope,
+                                                self.reference_detector), hjustify='center')
         return graph
 
-#    def _peak_center_graph_factory(self, graph, start, end, title=''):
-#        graph.container_dict = dict(padding=[10, 0, 30, 10])
-#        graph.clear()
 
+class PeakCenter(BasePeakCenter):
+    title = 'Peak Center'
 
-
-#============= EOF =============================================
-#        '''
-#            center pos needs to be ne axial dac units now
-#        '''
-#        if isinstance(center_pos, str):
+# ============= EOF =============================================
+# '''
+# center pos needs to be ne axial dac units now
+# '''
+# if isinstance(center_pos, str):
 #            '''
 #                passing in a mol weight key ie Ar40
 #                get_dac_for_mass can take a str or a float

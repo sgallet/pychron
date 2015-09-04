@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,14 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from pychron.loggable import Loggable
 from pychron.experiment.utilities.identifier import get_analysis_type
 from pychron.pychron_constants import LINE_STR
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 
 class HumanErrorChecker(Loggable):
     _extraction_line_required = False
@@ -28,15 +28,16 @@ class HumanErrorChecker(Loggable):
     def check_queue(self, qi):
         self.info('check queue {}'.format(qi.name))
         if self._extraction_line_required:
-            if not qi.extract_device or \
-                            qi.extract_device in ('Extract Device', LINE_STR):
-                msg = '"Extract Device is not set". Not saving experiment!'
-                self.info(msg)
-                return msg
+            if not qi.extract_device or qi.extract_device in ('Extract Device',):
+                if not self.confirmation_dialog('No extract device set.\n'
+                                                'Are you sure you want to continue?'):
+                    msg = '"Extract Device is not set". Not saving experiment!'
+                    self.info(msg)
+                    return msg
 
         if self._mass_spec_required:
             if not qi.mass_spectrometer or \
-                            qi.mass_spectrometer in ('Spectrometer', LINE_STR):
+                            qi.mass_spectrometer in ('Spectrometer',):
                 msg = '"Spectrometer" is not set. Not saving experiment!'
                 return msg
 
@@ -51,7 +52,7 @@ class HumanErrorChecker(Loggable):
             err = self._check_run(ai, inform, test_scripts)
             if err is not None:
                 ai.state = 'invalid'
-                ret[ai.runid] = err
+                ret['{}. {}'.format(i + 1, ai.runid)] = err
                 if not test_all:
                     return ret
             else:
@@ -91,6 +92,9 @@ class HumanErrorChecker(Loggable):
                 if not run.extract_value:
                     return 'position but no extract value'
 
+            if run.overlap[0]:
+                if not run.post_measurement_script:
+                    return 'post measurement script required for overlap'
         #if ant in ('unknown', 'background') or ant.startswith('blank'):
         #self._mass_spec_required = True
 
@@ -105,4 +109,4 @@ class HumanErrorChecker(Loggable):
                 self.warning_dialog(msg)
             return 'no {}'.format(attr)
 
-#============= EOF =============================================
+# ============= EOF =============================================

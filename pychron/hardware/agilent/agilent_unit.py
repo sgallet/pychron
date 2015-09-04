@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,43 +12,43 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from traits.api import Int
-#============= standard library imports ========================
+# ============= standard library imports ========================
 import time
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
 from pychron.hardware.core.core_device import CoreDevice
 
 
 class AgilentUnit(CoreDevice):
     slot = Int
     trigger_count = Int
-    def load_additional_args(self, config):
 
+    def load_additional_args(self, config):
         self.slot = self.config_get(config, 'General', 'slot', cast='int', default=1)
         self.trigger_count = self.config_get(config, 'General', 'trigger_count', cast='int', default=1)
+        return True
 
     def initialize(self, *args, **kw):
-        '''
+        """
             Agilent requires chr(10) as its communicator terminator
 
-        '''
+        """
 
         self._communicator.write_terminator = chr(10)
         cmds = (
-              '*CLS',
-              'FORM:READING:ALARM OFF',
-              'FORM:READING:CHANNEL ON',
-              'FORM:READING:TIME OFF',
-              'FORM:READING:UNIT OFF',
-              'TRIG:SOURCE TIMER',
-              'TRIG:TIMER 0',
-              'TRIG:COUNT {}'.format(self.trigger_count),
-#              # 'ROUT:CHAN:DELAY {} {}'.format(0.05, self._make_scan_list()),
-              'ROUT:SCAN {}'.format(self.make_scan_list()),
-             )
+            '*CLS',
+            'FORM:READING:ALARM OFF',
+            'FORM:READING:CHANNEL ON',
+            'FORM:READING:TIME OFF',
+            'FORM:READING:UNIT OFF',
+            'TRIG:SOURCE TIMER',
+            'TRIG:TIMER 0',
+            'TRIG:COUNT {}'.format(self.trigger_count),
+            #              # 'ROUT:CHAN:DELAY {} {}'.format(0.05, self._make_scan_list()),
+            'ROUT:SCAN {}'.format(self.make_scan_list()))
 
         for c in cmds:
             self.tell(c)
@@ -57,12 +57,13 @@ class AgilentUnit(CoreDevice):
         raise NotImplementedError
 
     def _trigger(self, verbose=False):
-        '''
-        '''
+        """
+        """
         self.tell('ABORT', verbose=verbose)
         # time.sleep(0.05)
         self.tell('INIT', verbose=verbose)
-#        time.sleep(0.075)
+
+    #        time.sleep(0.075)
 
     def _wait(self, n=10, verbose=False):
         if self.simulation:
@@ -81,7 +82,8 @@ class AgilentUnit(CoreDevice):
         resp = self.ask('DATA:POINTS?', verbose=verbose)
         if resp is not None and resp:
             return int(resp)
-#============= EOF =============================================
+
+# ============= EOF =============================================
 #    def read_device(self, **kw):
 #        '''
 #        '''

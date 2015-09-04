@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,20 +12,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from traits.api import Either, Int, Float, Str, List, Event, \
     Bool
 from traitsui.api import View
 from traitsui.api import Handler
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 # from pychron.utils import IsQt
 from pychron.loggable import Loggable
-from pychron.core.ui.gui import invoke_in_main_thread
-
 
 # class ViewableHandler(Controller):
 class ViewableHandler(Handler):
@@ -109,6 +107,8 @@ class Viewable(Loggable):
         pass
 
     def close_ui(self):
+        from pychron.core.ui.gui import invoke_in_main_thread
+
         self.debug('disposed')
         invoke_in_main_thread(self.trait_set, disposed=True)
 
@@ -183,4 +183,4 @@ class Viewable(Loggable):
         return 0.5
 
 
-#============= EOF =============================================
+# ============= EOF =============================================

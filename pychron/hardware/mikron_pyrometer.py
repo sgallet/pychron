@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,19 +12,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
 
 
-#=============enthought library imports=======================
-from traits.api import Float, Property, Button, Bool, Str, Dict, String
+# =============enthought library imports=======================
+from traits.api import Float, Property, Button, Bool, Str, String
 from traitsui.api import Item, spring, Group, HGroup, \
     RangeEditor, ButtonEditor, UItem, EnumEditor
-#=============standard library imports ========================
+# =============standard library imports ========================
 
-#=============local library imports  ==========================
+# =============local library imports  ==========================
 from core.core_device import CoreDevice
+# from pychron.core import Q_
 from pychron.core.ui.color_map_bar_editor import BarGaugeEditor
+
+TIME_CONSTANTS = {'0': 'Intrinsic', '1': '0.01 s',
+                  '2': '0.05 s', '3': '0.25', '4': '1.00 s',
+                  '5': '3.00 s', '6': '10.00 s'}
 
 
 class MikronGA140Pyrometer(CoreDevice):
@@ -51,9 +56,6 @@ class MikronGA140Pyrometer(CoreDevice):
     emmax = Float(100.0)
     time_constant = Property(String(enter_set=True, auto_set=False), depends_on='_time_constant')
     _time_constant = Str
-    time_constants = Dict({'0': 'Intrinsic', '1': '0.01 s',
-                           '2': '0.05 s', '3': '0.25', '4': '1.00 s',
-                           '5': '3.00 s', '6': '10.00 s'})
 
     pointer = Button
     pointing = Bool
@@ -61,28 +63,10 @@ class MikronGA140Pyrometer(CoreDevice):
 
     units = Str('C')
     temperature = Float
+    qtemperature = None
 
     char_write = True
     scan_func = 'read_temperature'
-
-    #    def __init__(self, *args, **kw):
-    #        '''
-    #
-    #        '''
-    #        super(MikronGA140Pyrometer, self).__init__(*args, **kw)
-    #        self.emmin = 10
-    #        self.emmax = 100
-    #
-    #    def _scan_(self):
-    #        '''
-    #        '''
-    #        func = getattr(self, self.scan_func)
-    #        func()
-    #
-    #    def emissivity_scan(self):
-    #        '''
-    #        '''
-    #        self.stream_manager.record(self.emissivity, self.name)
 
     def initialize(self, *args, **kw):
         """
@@ -99,12 +83,16 @@ class MikronGA140Pyrometer(CoreDevice):
         self._communicator.char_write = True
         return True
 
+    #REsponseRecorder Interface
+    def get_response(self, **kw):
+        return self.temperature
+
     def _build_command(self, cmd, value=None, per_mil=False, single_digit=False):
         """
 
         """
-        fmt = '{}{}' if value is None else '{}{}{:04n}' if per_mil else \
-            '{}{}{:n}' if single_digit else '{}{}{:02n}'
+        fmt = '{}{}' if value is None else '{}{}{:04d}' if per_mil else \
+            '{}{}{:d}' if single_digit else '{}{}{:02d}'
         args = (self.device_address, cmd)
 
         if value is not None:
@@ -141,7 +129,8 @@ class MikronGA140Pyrometer(CoreDevice):
         cmd = self._build_command('ms')
         temp = self._parse_response(self.ask(cmd, **kw))
 
-        self.temperature = temp if temp is not None else 0.0
+        # self.qtemperature = Q_(temp, 'C')
+        self.temperature = temp or 0
 
         return self.temperature
 
@@ -171,7 +160,8 @@ class MikronGA140Pyrometer(CoreDevice):
         cmd = self._build_command('ez', single_digit=True)
         v = self._parse_response(self.ask(cmd))
         if v is not None and not self.simulation:
-            self._time_constant = v
+            if v in TIME_CONSTANTS:
+                self._time_constant = TIME_CONSTANTS[v]
         return v
 
     def set_exposition_time(self, value):
@@ -184,7 +174,8 @@ class MikronGA140Pyrometer(CoreDevice):
         self.ask(cmd)
 
     def _get_time_constant(self):
-        return self._time_constant
+        if self._time_constant in TIME_CONSTANTS:
+            return TIME_CONSTANTS[self._time_constant]
 
     def _set_time_constant(self, v):
         self.debug('set time constant ={}'.format(v))
@@ -250,7 +241,7 @@ class MikronGA140Pyrometer(CoreDevice):
 
     def get_control_group(self):
         cg = Group(HGroup(UItem('pointer', editor=ButtonEditor(label_value='pointer_label')),
-                          Item('time_constant', editor=EnumEditor(name='time_constants')),
+                          Item('time_constant', editor=EnumEditor(values=TIME_CONSTANTS)),
                           spring, ),
                    HGroup(Item('temperature',
                                width=50,
@@ -269,7 +260,7 @@ class MikronGA140Pyrometer(CoreDevice):
                                                          high_name='emmax')))
         return cg
 
-#============= EOF =============================================
+# ============= EOF =============================================
 
 #    def scan(self, *args):
 #        '''

@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,18 +12,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
 
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 
-#============= standard library imports ========================
+# ============= standard library imports ========================
 
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
 
 from pychron.hardware.core.arduino_core_device import ArduinoCoreDevice
 '''
+Arduino Sketch fiberlightbox
+
 FiberLight Protocol ver 0.2
 4; on
 5; off
@@ -76,10 +78,12 @@ class ArduinoFiberLightModule(ArduinoCoreDevice):
         if resp is not None:
             try:
                 cmd, v = resp.split(',')
+                v = v.strip(';')
+
                 if cmd == '1':
-                    return int(v.strip(';'))
+                    return int(v)
             except Exception, err:
-                print err
+                print 'parse_response {}'.format(resp), err
 
     def _build_command(self, cmd, value=None):
         if value is not None:
@@ -87,4 +91,4 @@ class ArduinoFiberLightModule(ArduinoCoreDevice):
         else:
             return '{};'.format(cmd)
 
-#============= EOF ====================================
+# ============= EOF ====================================

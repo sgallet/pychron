@@ -1,5 +1,5 @@
-#===============================================================================
-# Copyright 2012 Jake Ross
+# ===============================================================================
+# Copyright 2014 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,38 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 
-#set GUI toolkit to QT
-from traits.etsconfig.api import ETSConfig
-ETSConfig.toolkit = "qt4"
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
+from helpers import entry_point
 
-from helpers import build_version
-build_version()
+entry_point('pyexperiment', 'PyExperiment', '')
 
-
-def main():
-    """
-        entry point
-    """
-    from pychron.envisage.pychron_run import launch
-    from pychron.core.helpers.logger_setup import logging_setup
-    from pychron.paths import build_directories, paths
-
-    # build directories
-    build_directories(paths)
-
-    # setup logging. set a basename for log files and logging level
-    logging_setup('pychron', level='DEBUG')
-
-    #import app klass and pass to launch function
-    from pychron.applications.pyexperiment import PyExperiment as app
-    launch(app)
-
-if __name__ == '__main__':
-    main()
-#============= EOF =============================================
+# ============= EOF =============================================

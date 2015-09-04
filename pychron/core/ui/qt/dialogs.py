@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,30 +12,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
-# from traits.api import HasTraits
-import time
-from threading import Event
+# ===============================================================================
+# ============= enthought library imports =======================
 
-from PySide import QtCore
-from PySide.QtGui import QSizePolicy
 from pyface.api import OK, YES
 from pyface.ui.qt4.confirmation_dialog import ConfirmationDialog
 from pyface.message_dialog import MessageDialog
 
+# ============= standard library imports ========================
+import time
+from threading import Event, currentThread, _MainThread, Thread
+# ============= local library imports  ==========================
 from pychron.core.ui.gui import invoke_in_main_thread
 
 
-#from pyface.confirmation_dialog import ConfirmationDialog
-
-#============= enthought library imports =======================
-#============= standard library imports ========================
-#============= local library imports  ==========================
 class myMessageMixin(object):
     """
         makes  message dialogs thread save.
     """
     timeout_return_code = YES
+    _closed_evt = None
 
     def open(self, timeout=0):
         """
@@ -43,9 +39,20 @@ class myMessageMixin(object):
         """
 
         evt = Event()
-        invoke_in_main_thread(self._open, evt)
+        ct = currentThread()
+        if isinstance(ct, _MainThread):
+            if timeout:
+                t = Thread(target=self._timeout_loop, args=(timeout, evt))
+                t.start()
+            self._open(evt)
+        else:
+            invoke_in_main_thread(self._open, evt)
+            self._timeout_loop(timeout, evt)
 
-        st=time.time()
+        return self.return_code
+
+    def _timeout_loop(self, timeout, evt):
+        st = time.time()
         while not evt.is_set():
             time.sleep(0.25)
             if timeout:
@@ -53,20 +60,13 @@ class myMessageMixin(object):
                 if et > timeout - 1:
                     invoke_in_main_thread(self.destroy)
                     return self.timeout_return_code
-
                 if self.control:
                     t = '{}\n\nTimeout in {:n}s'.format(self.message, int(timeout - et))
                     invoke_in_main_thread(self.control.setText, t)
 
-        return self.return_code
-
     def _open(self, evt):
-
         if self.control is None:
             self._create()
-
-        #if timeout:
-        #    self._timeout_message.setText('Timeout in {}s'.format(timeout))
 
         if self.style == 'modal':
             try:
@@ -83,47 +83,48 @@ class myMessageMixin(object):
         evt.set()
         return self.return_code
 
+
 class myMessageDialog(myMessageMixin, MessageDialog):
     pass
 
 
 class _ConfirmationDialog(ConfirmationDialog):
-
     def _create_control(self, parent):
-       dlg=super(_ConfirmationDialog, self)._create_control(parent)
-       dlg.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        dlg = super(_ConfirmationDialog, self)._create_control(parent)
+        # dlg.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-       if self.size != (-1,-1):
+        if self.size != (-1, -1):
             dlg.resize(*self.size)
-            dlg.event=self._handle_evt
+            # dlg.event = self._handle_evt
 
-       return dlg
+        dlg.buttonClicked.connect(self._handle_button)
+        return dlg
 
-    def _handle_evt(self, evt):
-        return True
+    def _handle_button(self, evt):
+        if self._closed_evt:
+            self._closed_evt.set()
 
-    def _show_modal(self):
-        self.control.setWindowModality(QtCore.Qt.ApplicationModal)
-        retval = self.control.exec_()
-        clicked_button = self.control.clickedButton()
-        if clicked_button in self._button_result_map:
-            retval = self._button_result_map[clicked_button]
-        # else:
-        #     retva
-            # retval = _RESULT_MAP[retval]
-        return retval
+    # def _handle_evt(self, evt):
+    #     return True
+
+    # def _show_modal(self):
+    #     self.control.setWindowTitle('asdfasdfasdfasdf')
+    #     self.control.resize(600,200)
+    #
+    #     # self.control.setModal(True)
+    #     # self.control.setWindowModality(QtCore.Qt.ApplicationModal)
+    #     retval = self.control.exec_()
+    #     clicked_button = self.control.clickedButton()
+    #     if clicked_button in self._button_result_map:
+    #         retval = self._button_result_map[clicked_button]
+    #         # else:
+    #         #     retva
+    #         # retval = _RESULT_MAP[retval]
+    #     return retval
 
 
 class myConfirmationDialog(myMessageMixin, _ConfirmationDialog):
     pass
 
 
-
-
-
-
-
-
-
-
-#============= EOF =============================================
+# ============= EOF =============================================

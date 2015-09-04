@@ -1,33 +1,80 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 import os
-from traits.api import List, Instance, Str, Property, Any, String, Button
+
+from pyface.action.menu_manager import MenuManager
+from traits.api import List, Instance, Str, Property, Any, String, Button, Int
 from traitsui.api import View, Item, UItem, InstanceEditor, ButtonEditor, VGroup, TabularEditor, \
     HGroup, spring, VSplit, Label
 from pyface.tasks.traits_dock_pane import TraitsDockPane
+from traitsui.handler import Handler
+from traitsui.menu import Action
 from traitsui.tabular_adapter import TabularAdapter
-from pychron.envisage.tasks.pane_helpers import icon_button_editor
+
+from pychron.envisage.icon_button_editor import icon_button_editor
 from pychron.core.ui.custom_label_editor import CustomLabel
 from pychron.core.ui.tabular_editor import myTabularEditor
 
+
+
 # from pychron.pyscripts.commands.core import ICommand
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
+
+
+class CommitAdapter(TabularAdapter):
+    columns = [('Commit', 'message'), ('Date', 'date')]
+    font = '10'
+    date_width = Int(100)
+
+    def get_bg_color(self, obj, trait, row, column=0):
+        color = 'white'
+        if self.item.active:
+            color = 'gray'
+        return color
+
+    def get_menu(self, obj, trait, row, column):
+        return MenuManager(Action(name='Diff', action='on_diff'),
+                           Action(name='Revert To', action='on_revert_to'))
+
+
+class RepoHandler(Handler):
+    def on_diff(self, info, obj):
+        obj.diff_selected()
+
+    def on_revert_to(self, info, obj):
+        obj.revert_to_selected()
+
+
+class RepoPane(TraitsDockPane):
+    name = 'Repo'
+    id = 'pychron.pyscript.repo'
+
+    def traits_view(self):
+        v = View(UItem('selected_path_commits',
+                       editor=TabularEditor(adapter=CommitAdapter(),
+                                            editable=False,
+                                            multi_select=True,
+                                            refresh='refresh_commits_table_needed',
+                                            selected='selected_commits')),
+                 handler=RepoHandler())
+        return v
+
 
 class ControlPane(TraitsDockPane):
     name = 'Control'
@@ -37,16 +84,12 @@ class ControlPane(TraitsDockPane):
         v = View(
             VGroup(
                 UItem('execute',
-                      editor=ButtonEditor(label_value='execute_label')
-                ),
+                      editor=ButtonEditor(label_value='execute_label')),
                 VGroup(
                     UItem('use_trace'),
                     UItem('trace_delay', label='Delay (ms)'),
                     show_border=True,
-                    label='Trace'
-                )
-            )
-        )
+                    label='Trace')))
         return v
 
 
@@ -57,10 +100,9 @@ class DescriptionPane(TraitsDockPane):
     def traits_view(self):
         v = View(
             UItem('description',
-                  style='readonly'
-            )
+                  style='readonly')
 
-            #                 'object.selected_command_object',
+            # 'object.selected_command_object',
             #                 show_label=False,
             #                 style='custom',
             #                 height=0.25,
@@ -76,22 +118,24 @@ class ExamplePane(TraitsDockPane):
     def traits_view(self):
         v = View(
             UItem('example',
-                  style='readonly'
-            )
-
-            #                 'object.selected_command_object',
-            #                 show_label=False,
-            #                 style='custom',
-            #                 height=0.25,
-            #                 editor=InstanceEditor(view='help_view')
-        )
+                  style='readonly'))
         return v
 
 
-class EditorPane(TraitsDockPane):
-    name = 'Editor'
-    id = 'pychron.pyscript.editor'
-    editor = Instance('pychron.pyscripts.parameter_editor.ParameterEditor')
+# class EditorPane(TraitsDockPane):
+# name = 'Editor'
+# id = 'pychron.pyscript.editor'
+#     editor = Instance('pychron.pyscripts.parameter_editor.ParameterEditor')
+#
+#     def traits_view(self):
+#         v = View(UItem('editor', style='custom'))
+#         return v
+
+
+class ContextEditorPane(TraitsDockPane):
+    name = 'Context'
+    id = 'pychron.pyscript.context_editor'
+    editor = Instance('pychron.pyscripts.context_editors.context_editor.ContextEditor')
 
     def traits_view(self):
         v = View(UItem('editor', style='custom'))
@@ -101,7 +145,7 @@ class EditorPane(TraitsDockPane):
 class CommandsAdapter(TabularAdapter):
     columns = [('Name', 'name')]
     name_text = Property
-    #
+
     def _get_name_text(self, *args, **kw):
         return self.item
 
@@ -110,12 +154,15 @@ class CommandEditorPane(TraitsDockPane):
     name = 'Commands Editor'
     id = 'pychron.pyscript.commands_editor'
     command_object = Any
+    insert_button = Button
 
     def traits_view(self):
-        v = View(UItem('command_object',
-                       width=-275,
-                       editor=InstanceEditor(),
-                       style='custom'))
+        v = View(
+            UItem('insert_button', enabled_when='command_object'),
+            UItem('command_object',
+                  width=-275,
+                  editor=InstanceEditor(),
+                  style='custom'))
         return v
 
 
@@ -132,19 +179,18 @@ class CommandsPane(TraitsDockPane):
     command_objects = List
 
     def set_command(self, line):
-        args=line.split('(')
-        cmd=args[0]
+        args = line.split('(')
+        cmd = args[0]
         if cmd:
-            self.selected_command=cmd
-            s='('.join(args[1:])
-            s=s[:-1]
+            self.selected_command = cmd
+            s = '('.join(args[1:])
+            s = s[:-1]
             self.command_object.load_str(s)
-
 
     def _selected_command_changed(self):
         if self.selected_command:
             obj = next((ci for ci in self.command_objects
-                        if ci.name == self.selected_command), None)
+                        if ci and ci.name == self.selected_command), None)
             self.command_object = obj
 
     def _set_commands(self, cs):
@@ -160,11 +206,8 @@ class CommandsPane(TraitsDockPane):
                       editor=myTabularEditor(operations=['move'],
                                              adapter=CommandsAdapter(),
                                              editable=True,
-                                             selected='selected_command'
-                      ),
-                      width=200,
-        )
-        )
+                                             selected='selected_command'),
+                      width=200, ))
         return v
 
 
@@ -196,11 +239,14 @@ class ScriptBrowserPane(TraitsDockPane):
 
     def _root_changed(self):
         root = self.root
-
-        ps = [p for p in os.listdir(root)]
-        self.items = filter(lambda x: not (x.startswith('.') or os.path.isdir(os.path.join(root, x))), ps)
-        self.directories = filter(lambda x: os.path.isdir(os.path.join(root, x)), ps)
-        self.selected_directory = self.root
+        if root:
+            ps = [p for p in os.listdir(root)]
+            self.items = filter(lambda x: not (x.startswith('.') or os.path.isdir(os.path.join(root, x))), ps)
+            self.directories = filter(lambda x: os.path.isdir(os.path.join(root, x)), ps)
+            self.selected_directory = self.root
+        else:
+            self.directories = []
+            self.selected_directory = ''
 
     def _directory_dclicked_changed(self):
         if self.selected_directory:
@@ -231,4 +277,4 @@ class ScriptBrowserPane(TraitsDockPane):
     def _get_selected_directory_name(self):
         return os.path.basename(self.root)
 
-#============= EOF =============================================
+# ============= EOF =============================================

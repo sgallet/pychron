@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,20 +12,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
 
 
-#=============enthought library imports=======================
+# =============enthought library imports=======================
 
-#=============standard library imports ========================
+# =============standard library imports ========================
 from sqlalchemy import Column, Integer, Float, String, \
     ForeignKey, DateTime, Date, BLOB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relation, relationship
 from sqlalchemy.sql.expression import func
 
-#=============local library imports  ==========================
+# =============local library imports  ==========================
+from pychron.database.orms.isotope.util import doublecolumn
+
 Base = declarative_base()
 
 
@@ -63,6 +65,8 @@ class AnalysesTable(Base):
 
     IrradPosition = Column(Integer, ForeignKey('IrradiationPositionTable.IrradPosition'))
     Aliquot = Column(String(10))
+    Aliquot_pychron = Column(Integer)
+
     Increment = Column(String(20))
     SpecParametersID = Column(Integer, default=0)
     RunScriptID = Column(Integer, ForeignKey('RunScriptTable.RunScriptID'))
@@ -118,23 +122,25 @@ class ArArAnalysisTable(Base):
     #    AnalysisID = Column(Integer, primary_key=True)
     AnalysisID = Column(Integer, ForeignKey('AnalysesTable.AnalysisID'))
     DataReductionSessionID = Column(Integer)
-    JVal = Column(Float, default=0)
-    JEr = Column(Float, default=0)
-    Tot40 = Column(Float, default=0)
-    Tot39 = Column(Float, default=0)
-    Tot38 = Column(Float, default=0)
-    Tot37 = Column(Float, default=0)
-    Tot36 = Column(Float, default=0)
+    JVal = doublecolumn()#Column(Float, default=0)
+    JEr = doublecolumn()#Column(Float, default=0)
+    Tot40 = doublecolumn()
+    Tot39 = doublecolumn()
+    Tot38 = doublecolumn()
+    Tot37 = doublecolumn()
+    Tot36 = doublecolumn()
 
-    Tot40Er = Column(Float, default=0)
-    Tot39Er = Column(Float, default=0)
-    Tot38Er = Column(Float, default=0)
-    Tot37Er = Column(Float, default=0)
-    Tot36Er = Column(Float, default=0)
+    Tot40Er = doublecolumn()
+    Tot39Er = doublecolumn()
+    Tot38Er = doublecolumn()
+    Tot37Er = doublecolumn()
+    Tot36Er = doublecolumn()
 
-    Age = Column(Float, default=0, primary_key=True)
-    ErrAge = Column(Float, default=0)
-
+    Age = doublecolumn(primary_key=True)
+    ErrAge = doublecolumn()
+    ErrAgeWOErInJ = doublecolumn()
+    PctRad = doublecolumn()
+    PctRadEr = doublecolumn()
 
 class BaselinesChangeableItemsTable(Base):
     __tablename__ = 'baselineschangeableitemstable'
@@ -156,6 +162,7 @@ class BaselinesTable(Base):
     NumCnts = Column(Integer)
     PeakTimeBlob = Column(BLOB, nullable=True)
     isotope = relationship('IsotopeTable', backref='baseline', uselist=False)
+
 
 #    changeable_item = relationship('baselineschangeableitemstable', uselist=False)
 
@@ -203,8 +210,8 @@ class DetectorTypeTable(Base):
 
 
 class IrradiationPositionTable(Base):
-    '''
-    '''
+    """
+    """
     __tablename__ = 'IrradiationPositionTable'
 
     IrradPosition = Column(Integer, primary_key=True)
@@ -216,8 +223,8 @@ class IrradiationPositionTable(Base):
     StandardID = Column(Integer, default=0)
     Size = Column(String(40), default='NULL')
     Weight = Column(Float, default=0)
-    Note = Column(String(40), nullable=True)
-    LabActivation = Column(Date, default='NULL')
+    Note = Column(String(255), nullable=True)
+    LabActivation = Column(Date, default=func.now())
     J = Column(Float, nullable=True)
     JEr = Column(Float, nullable=True)
 
@@ -226,10 +233,12 @@ class IrradiationPositionTable(Base):
 
 class IrradiationLevelTable(Base):
     __tablename__ = 'IrradiationLevelTable'
-    IrradBaseID = Column(String(80))
-    Level = Column(String(80), primary_key=True)
+    IrradBaseID = Column(String(80), index=True, unique=False, primary_key=True)
+    Level = Column(String(80), index=True, unique=False, primary_key=True)
+
     SampleHolder = Column(String(40))
     ProductionRatiosID = Column(Integer, ForeignKey('IrradiationProductionTable.ProductionRatiosID'))
+    ExperimentType = Column(Integer, default=1)
 
 
 class IrradiationProductionTable(Base):
@@ -258,6 +267,10 @@ class IrradiationProductionTable(Base):
 
     Label = Column(String(80))
     levels = relationship('IrradiationLevelTable', backref='production')
+
+    @property
+    def Cl3638(self):
+        return self.P36Cl38Cl
 
 
 class IrradiationChronologyTable(Base):
@@ -334,6 +347,7 @@ class FittypeTable(Base):
     results = relationship('IsotopeResultsTable', backref='fit',
                            #                          uselist=False
     )
+
 
 #    baseline_results = relationship('baselineschangeableitemstable', backref='fit',
 # #                          uselist=False
@@ -417,7 +431,7 @@ class SampleTable(Base):
     ProjectID = Column(Integer, ForeignKey('projecttable.ProjectID'))
     Note = Column(String(40), default='NULL')
     AlternateUserID = Column(String(40), default='NULL')
-    CollectionDateTime = Column(DateTime, default='')
+    CollectionDateTime = Column(DateTime, default=func.now())
     Coordinates = Column(BLOB, default='NULL')
     Latitude = Column(String(40), default='NULL')
     Longitude = Column(String(40), default='NULL')

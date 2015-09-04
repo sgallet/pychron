@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,25 +12,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 
 from traits.api import HasTraits, Float, Int, List, Str, Any, Event, Property, on_trait_change, Range
 from traitsui.api import View, Item, HGroup, spring, EnumEditor, ButtonEditor, Group, TextEditor
 
-#============= standard library imports ========================
+# ============= standard library imports ========================
 from numpy import array, hstack, Inf, savetxt
 import csv
 import os
 from threading import Thread
 import struct
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
 from pychron.core.helpers.filetools import unique_path
 from pychron.core.helpers.isotope_utils import sort_isotopes
 from pychron.paths import paths
 from pychron.spectrometer.jobs.magnet_scan import MagnetScan
-from pychron.core.stats.peak_detection import find_peaks, calculate_peak_center
+from pychron.core.stats.peak_detection import find_peaks, calculate_peak_center, PeakCenterError
 from pychron.core.ui.gui import invoke_in_main_thread
 
 DELTA_TOOLTIP = """The minimum difference between a peak and
@@ -152,8 +152,8 @@ class MassCalibratorScan(MagnetScan):
             save calibration peaks as mag field table
         """
         p = os.path.join(paths.spectrometer_dir, 'mftable.csv')
-        with open(p, 'w') as fp:
-            writer = csv.writer(fp, delimiter=',')
+        with open(p, 'w') as wfile:
+            writer = csv.writer(wfile, delimiter=',')
             for cp in self.calibration_peaks:
                 if cp.isotope:
                     writer.writerow([cp.isotope, cp.dac])
@@ -171,15 +171,19 @@ class MassCalibratorScan(MagnetScan):
         xs = line.index.get_data()
         ys = line.value.get_data()
 
-        center = calculate_peak_center(xs, ys)
-        if not isinstance(center, str):
+        try:
+            center = calculate_peak_center(xs, ys)
+
+        # if not isinstance(center, str):
             [lx, cx, hx], [ly, cy, hy], mx, my = center
             self.graph.add_vertical_rule(cx, plotid=1)
             self.info('new peak center. {} nominal={} dx={}'.format(cp.isotope, cp.dac, cx))
             cp.dac += cx
             self._redraw()
-        else:
-            self.warning(center)
+        except PeakCenterError,e:
+            self.warning(e)
+        # else:
+        #     self.warning(center)
 
     def _update_graph_data(self, *args, **kw):
         """
@@ -326,9 +330,9 @@ class MassCalibratorScan(MagnetScan):
     def _end(self):
         self._fine_scanning = False
 
-    #===================================================================================================================
+    # ===================================================================================================================
     # handlers
-    #===================================================================================================================
+    # ===================================================================================================================
     @on_trait_change('min_peak_height, min_peak_separation, delta')
     def _handle_peak_detection_change(self):
         self._find_peaks()
@@ -406,5 +410,5 @@ class MassCalibratorScan(MagnetScan):
     def _get_fexecute_label(self):
         return 'Stop' if self.isAlive() else 'Start'
 
-        #============= EOF =============================================
+        # ============= EOF =============================================
 

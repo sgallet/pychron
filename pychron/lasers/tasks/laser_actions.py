@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,19 +12,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 # from traits.api import HasTraits
 # from traitsui.api import View, Item
 from pyface.action.action import Action
+
 from pyface.tasks.action.task_action import TaskAction
 
 from pychron.lasers.laser_managers.ilaser_manager import ILaserManager
 from pychron.lasers.laser_managers.pychron_laser_manager import PychronLaserManager
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+
+
+
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 from pychron.lasers.pattern.pattern_maker_view import PatternMakerView
 
 
@@ -56,6 +60,14 @@ class LocalLaserAction(BaseLaserAction):
             self.enabled = False
 
         self.manager = manager
+
+
+class ExecutePatternAction(LocalLaserAction):
+    name = 'Execute Pattern'
+    def perform(self, event):
+        manager = self._get_manager(event)
+        if manager is not None:
+            manager.execute_pattern()
 
 
 class OpenScannerAction(LocalLaserAction):
@@ -123,17 +135,19 @@ class LaserTaskAction(TaskAction):
             self.enabled = bool(self.object)
 
 
-class TestDegasAction(LaserTaskAction):
-    name = 'Test Degas...'
-    method = 'test_degas'
+# class TestDegasAction(LaserTaskAction):
+#     name = 'Test Degas...'
+#     method = 'test_degas'
 
 
 class OpenPatternAction(Action):
     name = 'Open Pattern...'
+
     def perform(self, event=None):
         pm = PatternMakerView()
         if pm.load_pattern():
             event.task.window.application.open_view(pm)
+
 
 class NewPatternAction(Action):
     name = 'New Pattern...'
@@ -195,8 +209,10 @@ class PyrometerCalibrationAction(LaserCalibrationAction):
 
 
 class PIDTuningAction(LaserCalibrationAction):
-    name='PID Tuning'
+    name = 'PID Tuning'
+
     def perform(self, event):
         task = self._get_task(event)
         task.new_pid_tuner()
-#============= EOF =============================================
+
+# ============= EOF =============================================

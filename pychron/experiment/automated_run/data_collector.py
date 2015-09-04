@@ -1,45 +1,51 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
-from traits.api import Any, List, CInt, Int, Bool, Enum
+# ============= enthought library imports =======================
+from traits.api import Any, List, CInt, Int, Bool, Enum, Str
 # from traitsui.api import View, Item
 # from pyface.timer.do_later import do_after
-#============= standard library imports ========================
+# ============= standard library imports ========================
 import time
 from threading import Event, Timer
-#============= local library imports  ==========================
-from pychron.loggable import Loggable
+# ============= local library imports  ==========================
+from pychron.envisage.consoleable import Consoleable
 # from pychron.core.ui.gui import invoke_in_main_thread
+from pychron.experiment.utilities.conditionals_results import check_conditional_results
 from pychron.globals import globalv
 from pychron.consumer_mixin import consumable
 # from pychron.core.codetools.memory_usage import mem_log
-from pychron.core.ui.gui import invoke_in_main_thread
 
 
-class DataCollector(Loggable):
+class DataCollector(Consoleable):
+    """
+    Base class for ``Collector`` objects. Provides logic for iterative measurement.
+    """
+
     measurement_script = Any
-    plot_panel = Any
-    arar_age = Any
+    # plot_panel = Any
+    # arar_age = Any
+    automated_run = Any
+    measurement_result = Str
 
     detectors = List
-    check_conditions = Bool(True)
-    truncation_conditions = List
-    terminations_conditions = List
-    action_conditions = List
+    check_conditionals = Bool(True)
+    # truncation_conditionals = List
+    # termination_conditionals = List
+    # action_conditionals = List
     ncounts = CInt
     #grpname = Str
 
@@ -47,9 +53,11 @@ class DataCollector(Loggable):
     for_peak_hop = Bool(False)
     fits = List
     series_idx = Int
+    fit_series_idx = Int
     #total_counts = CInt
 
     canceled = False
+    terminated = False
 
     _truncate_signal = False
     starttime = None
@@ -58,7 +66,11 @@ class DataCollector(Loggable):
     _warned_no_fit = None
     _warned_no_det = None
 
-    collection_kind = Enum(('sniff', 'signal', 'baseline'))
+    collection_kind = Enum(('sniff', 'signal', 'baseline','whiff'))
+    refresh_age = False
+    _data = None
+    _temp_conds = None
+    _result = None
 
     def wait(self):
         st = time.time()
@@ -80,6 +92,8 @@ class DataCollector(Loggable):
         if self.canceled:
             return
 
+        self.measurement_result = ''
+        self.terminated = False
         self._truncate_signal = False
         self._warned_no_fit = []
         self._warned_no_det = []
@@ -109,35 +123,56 @@ class DataCollector(Loggable):
         tt = time.time() - st
         self.debug('estimated time: {:0.3f} actual time: :{:0.3f}'.format(et, tt))
 
+    def plot_data(self, *args, **kw):
+        from pychron.core.ui.gui import invoke_in_main_thread
+        invoke_in_main_thread(self._plot_data, *args, **kw)
+
+    def set_temporary_conditionals(self, cd):
+        self._temp_conds = cd
+
+    def clear_temporary_conditionals(self):
+        self._temp_conds = None
+
     def _measure(self, evt):
         self.debug('starting measurment')
         with consumable(func=self._iter_step) as con:
             self._iter(con, evt, 1)
             while not evt.is_set():
-                time.sleep(0.25)
+                time.sleep(0.05)
 
         self.debug('measurement finished')
 
     def _iter(self, con, evt, i, prev=0):
-        if not self._check_iteration(evt, i):
+
+        result = self._check_iteration(evt, i)
+
+        if not result:
+            try:
+                if i <= 1:
+                    self.automated_run.plot_panel.counts = 1
+                else:
+                    self.automated_run.plot_panel.counts += 1
+            except AttributeError:
+                pass
+
             if not self._iter_hook(con, i):
                 evt.set()
                 return
 
             ot = time.time()
-
             p = self.period_ms * 0.001
-            p -= prev
-            p = max(0, p)
-
-            #self.debug('period {} {} {}'.format(p,prev, self.period_ms))
-            t = Timer(p, self._iter, args=(con, evt, i + 1,
-                                           time.time() - ot))
+            t = Timer(max(0, p - prev), self._iter, args=(con, evt, i + 1,
+                                                          time.time() - ot))
 
             t.name = 'iter_{}'.format(i + 1)
             t.start()
 
         else:
+            if result == 'cancel':
+                self.canceled = True
+            elif result == 'terminate':
+                self.terminated = True
+
             #self.debug('no more iter')
             evt.set()
 
@@ -152,29 +187,31 @@ class DataCollector(Loggable):
         if dets:
             data = zip(*[(k, s) for k, s in zip(*data)
                          if k in dets])
-
+        self._data = data
         return data
 
     def _save_data(self, x, keys, signals):
         self.data_writer(self.detectors, x, keys, signals)
-
         #update arar_age
         if self.is_baseline and self.for_peak_hop:
             self._update_baseline_peak_hop(x, keys, signals)
         else:
             self._update_isotopes(x, keys, signals)
 
+        if self.refresh_age:
+            self.arar_age.calculate_age(force=True)
+
     def _update_baseline_peak_hop(self, x, keys, signals):
         a = self.arar_age
         for iso in self.arar_age.isotopes.itervalues():
-            signal=self._get_signal(keys, signals, iso.detector)
+            signal = self._get_signal(keys, signals, iso.detector)
             if signal is not None:
                 if not a.append_data(iso.name, iso.detector, x, signal, 'baseline'):
-                    self.debug('baselines - failed appending data for {}. not a current isotope {}'.format(iso, a.isotope_keys))
+                    self.debug('baselines - failed appending data for {}. not a current isotope {}'.format(iso,
+                                                                                                           a.isotope_keys))
 
     def _update_isotopes(self, x, keys, signals):
         a = self.arar_age
-
         kind = self.collection_kind
 
         for dn in keys:
@@ -184,7 +221,8 @@ class DataCollector(Loggable):
                 signal = self._get_signal(keys, signals, dn.name)
                 if signal is not None:
                     if not a.append_data(iso, dn.name, x, signal, kind):
-                        self.debug('{} - failed appending data for {}. not a current isotope {}'.format(kind, iso, a.isotope_keys))
+                        self.debug('{} - failed appending data for {}. not a current isotope {}'.format(kind, iso,
+                                                                                                        a.isotope_keys))
 
     def _get_signal(self, keys, signals, det):
         try:
@@ -193,7 +231,7 @@ class DataCollector(Loggable):
             if not det in self._warned_no_det:
                 self.warning('Detector {} is not available'.format(det))
                 self._warned_no_det.append(det)
-                self.canceled=True
+                self.canceled = True
                 self.stop()
 
     def _get_detector(self, d):
@@ -201,9 +239,6 @@ class DataCollector(Loggable):
             d = next((di for di in self.detectors
                       if di.name == d), None)
         return d
-
-    def plot_data(self, *args, **kw):
-        invoke_in_main_thread(self._plot_data, *args, **kw)
 
     def _plot_baseline_for_peak_hop(self, i, x, keys, signals):
         for k, v in self.arar_age.isotopes.iteritems():
@@ -218,22 +253,37 @@ class DataCollector(Loggable):
                 signal = signals[keys.index(dn.name)]
                 self._set_plot_data(cnt, iso, dn.name, x, signal)
 
-    def _set_plot_data(self, cnt, iso, det, x, signal):
-        try:
-            name=iso
-            iso=self.arar_age.isotopes[iso]
-        except KeyError:
-            name='{}{}'.format(iso, det)
-            iso=self.arar_age.isotopes[name]
-
+    def _get_fit(self, cnt, det, iso):
+        isotopes = self.arar_age.isotopes
         if self.is_baseline:
-            fit=iso.baseline.get_fit(cnt)
+            ix = isotopes[iso]
+            fit = ix.baseline.get_fit(cnt)
+            name = iso
         else:
-            fit=iso.get_fit(cnt)
+            try:
+                name = iso
+                iso = isotopes[iso]
+            except KeyError:
+                name = '{}{}'.format(iso, det)
+                iso = isotopes[name]
 
+            fit = iso.get_fit(cnt)
+
+        return fit, name
+
+    def _set_plot_data(self, cnt, iso, det, x, signal):
+        """
+            if is_baseline than use detector to get isotope
+        """
+
+        # get fit and name
+        fit, name = self._get_fit(cnt, det, iso)
+        # print fit, name, det, iso
         graph = self.plot_panel.isotope_graph
-        pid=graph.get_plotid_by_ytitle(name)
+        pid = graph.get_plotid_by_ytitle(name)
         if pid is not None:
+            # print self.series_idx, self.fit_series_idx
+            # print graph.plots[pid].plots
             graph.add_datum((x, signal),
                             series=self.series_idx,
                             plotid=pid,
@@ -241,7 +291,7 @@ class DataCollector(Loggable):
                             ypadding='0.1')
 
             if fit:
-                graph.set_fit(fit, plotid=pid, series=self.series_idx)
+                graph.set_fit(fit, plotid=pid, series=self.fit_series_idx)
 
     def _plot_data(self, i, x, keys, signals):
         if globalv.experiment_debug:
@@ -255,21 +305,28 @@ class DataCollector(Loggable):
         graph = self.plot_panel.isotope_graph
         graph.refresh()
 
-    #===============================================================================
+    # ===============================================================================
     #
-    #===============================================================================
+    # ===============================================================================
 
-    #===============================================================================
+    # ===============================================================================
     # checks
-    #===============================================================================
-    def _check_conditions(self, conditions, cnt):
-        for ti in conditions:
-            if ti.check(self.arar_age, cnt):
+    # ===============================================================================
+    def _check_conditionals(self, conditionals, cnt):
+        for ti in conditionals:
+            if ti.check(self.automated_run, self._data, cnt):
+                self.info('Conditional tripped: {}'.format(ti.to_string()))
                 return ti
 
     def _check_iteration(self, evt, i):
         if evt and evt.isSet():
             return True
+
+        if self._temp_conds:
+            ti = self._check_conditionals(self._temp_conds, i)
+            if ti:
+                self.measurement_result = ti.action
+                return 'break'
 
         j = i - 1
         user_counts = 0 if self.plot_panel is None else self.plot_panel.ncounts
@@ -289,6 +346,7 @@ class DataCollector(Loggable):
                 self.plot_panel.total_counts -= (original_counts - i)
                 return 'break'
         elif script_counts != original_counts:
+            print script_counts, original_counts, i
             if i > script_counts:
                 self.info('script termination. measurement iteration executed {}/{} counts'.format(*count_args))
                 return 'break'
@@ -301,33 +359,69 @@ class DataCollector(Loggable):
 
             return 'break'
 
-        if self.check_conditions:
-            termination_condition = self._check_conditions(self.termination_conditions, i)
-            if termination_condition:
-                self.info('termination condition {}. measurement iteration executed {}/{} counts'.format(
-                    termination_condition.message, j, original_counts),
-                          color='red')
+        if self.check_conditionals:
+            termination_conditional = self._check_conditionals(self.termination_conditionals, i)
+            if termination_conditional:
+                self.info('termination conditional {}. measurement iteration executed {}/{} counts'.format(
+                    termination_conditional.message, j, original_counts), color='red')
+
+                key = repr(termination_conditional)
+                n = termination_conditional.nfails
+                if check_conditional_results(key, n):
+                    return 'cancel'
+                else:
+                    return 'terminated'
+
+            cancelation_conditional = self._check_conditionals(self.cancelation_conditionals, i)
+            if cancelation_conditional:
+                self.info('cancelation conditional {}. measurement iteration executed {}/{} counts'.format(
+                    cancelation_conditional.message, j, original_counts), color='red')
+                self.automated_run.show_conditionals(tripped=cancelation_conditional)
                 return 'cancel'
 
-            truncation_condition = self._check_conditions(self.truncation_conditions, i)
-            if truncation_condition:
-                self.info('truncation condition {}. measurement iteration executed {}/{} counts'.format(
-                    truncation_condition.message, j, original_counts),
-                          color='red')
+            truncation_conditional = self._check_conditionals(self.truncation_conditionals, i)
+            if truncation_conditional:
+                self.info('truncation conditional {}. measurement iteration executed {}/{} counts'.format(
+                    truncation_conditional.message, j, original_counts), color='red')
                 self.state = 'truncated'
-                self.measurement_script.abbreviated_count_ratio = truncation_condition.abbreviated_count_ratio
-
+                self.measurement_script.abbreviated_count_ratio = truncation_conditional.abbreviated_count_ratio
+                self.automated_run.show_conditionals(tripped=truncation_conditional)
                 #                self.condition_truncated = True
                 return 'break'
 
-            action_condition = self._check_conditions(self.action_conditions, i)
-            if action_condition:
+            action_conditional = self._check_conditionals(self.action_conditionals, i)
+            if action_conditional:
                 self.info(
-                    'action condition {}. measurement iteration executed {}/{} counts'.format(action_condition.message,
-                                                                                              j, original_counts),
-                    color='red')
-                action_condition.perform(self.measurement_script)
-                if not action_condition.resume:
+                    'action conditional {}. measurement iteration executed {}/{} counts'.format(
+                        action_conditional.message,
+                        j, original_counts), color='red')
+                self.automated_run.show_conditionals(tripped=action_conditional)
+                action_conditional.perform(self.measurement_script)
+                if not action_conditional.resume:
                     return 'break'
 
-        #============= EOF =============================================
+    @property
+    def arar_age(self):
+        return self.automated_run.arar_age
+
+    @property
+    def plot_panel(self):
+        return self.automated_run.plot_panel
+
+    @property
+    def truncation_conditionals(self):
+        return self.automated_run.truncation_conditionals
+
+    @property
+    def termination_conditionals(self):
+        return self.automated_run.termination_conditionals
+
+    @property
+    def action_conditionals(self):
+        return self.automated_run.action_conditionals
+
+    @property
+    def cancelation_conditionals(self):
+        return self.automated_run.cancelation_conditionals
+
+# ============= EOF =============================================

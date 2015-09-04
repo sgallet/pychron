@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,16 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from traits.api import Instance
-#============= standard library imports ========================
+# ============= standard library imports ========================
 from reportlab.platypus.doctemplate import BaseDocTemplate, PageTemplate
 from reportlab.lib.units import inch
 from reportlab.platypus.paragraph import Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
 from pychron.loggable import Loggable
 from reportlab.platypus.frames import Frame
 from reportlab.platypus.flowables import Spacer, PageBreak
@@ -61,27 +61,34 @@ class NumberedCanvas(canvas.Canvas):
 class BasePDFWriter(Loggable):
     _footnotes = None
 
-    options=Instance(BasePDFOptions)
-    _options_klass=BasePDFOptions
+    options = Instance(BasePDFOptions)
+    _options_klass = BasePDFOptions
 
     def _options_default(self):
         return self._options_klass()
 
     def _new_base_doc_template(self, path):
         pagesize = letter
-        opt=self.options
+        opt = self.options
         if opt.orientation == 'landscape':
             pagesize = landscape(letter)
+            leftMargin = opt.bottom_margin * inch
+            rightMargin = opt.top_margin * inch
+            topMargin = opt.left_margin * inch
+            bottomMargin = opt.right_margin * inch
+        else:
+            leftMargin = opt.left_margin * inch
+            rightMargin = opt.right_margin * inch
+            topMargin = opt.top_margin * inch
+            bottomMargin = opt.bottom_margin * inch
 
+        print leftMargin, rightMargin, topMargin, bottomMargin
         doc = BaseDocTemplate(path,
-                              leftMargin=opt.left_margin * inch,
-                              rightMargin=opt.right_margin * inch,
-                              topMargin=opt.top_margin * inch,
-                              bottomMargin=opt.bottom_margin * inch,
-                              pagesize=pagesize
-                              #                                   _pageBreakQuick=0,
-                              #                                   showBoundary=1
-        )
+                              leftMargin=leftMargin,
+                              rightMargin=rightMargin,
+                              topMargin=topMargin,
+                              bottomMargin=bottomMargin,
+                              pagesize=pagesize)
         return doc
 
     def build(self, path, *args, **kw):
@@ -103,6 +110,11 @@ class BasePDFWriter(Loggable):
             doc.build(flowables)
 
     def _build(self, *args, **kw):
+        """
+            return a tuple of reportlab flowables and templates.
+            templates are optional but you must at least return None
+            e.g [f1,f2],[]
+        """
         raise NotImplementedError
 
     def _new_paragraph(self, t, s='Normal', **skw):
@@ -157,9 +169,9 @@ class BasePDFWriter(Loggable):
                 v = getattr(v, key)
 
         if isinstance(v, (float, int)):
-            v = v / float(scale)
+            v /= float(scale)
 
-        return floatfmt(v, n=n, max_width=8, **kw)
+        return floatfmt(v, n=n, max_width=10, **kw)
 
     def _error(self, **kw):
         return lambda x: self._fmt_attr(x, key='std_dev', **kw)
@@ -168,5 +180,4 @@ class BasePDFWriter(Loggable):
         return lambda x: self._fmt_attr(x, key='nominal_value', **kw)
 
 
-
-#============= EOF =============================================
+# ============= EOF =============================================

@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,22 +12,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#=============enthought library imports========================
+# =============enthought library imports========================
 import os
+
 from traits.api import Enum, Float, Event, Property, Int, Button, Bool, Str, Any, on_trait_change, String
 from traitsui.api import View, HGroup, Item, Group, VGroup, EnumEditor, RangeEditor, ButtonEditor, spring
+
 # from pyface.timer.api import Timer
 
-#=============standard library imports ========================
+# =============standard library imports ========================
 # import sys, os
-#=============local library imports  ==========================
+# =============local library imports  ==========================
 # sys.path.insert(0, os.path.join(os.path.expanduser('~'),
 #                               'Programming', 'mercurial', 'pychron_beta'))
 
 from core.core_device import CoreDevice
-from pychron.envisage.tasks.pane_helpers import icon_button_editor
+from pychron.envisage.icon_button_editor import icon_button_editor
 from pychron.graph.time_series_graph import TimeSeriesStreamStackedGraph
 
 from pychron.graph.plot_record import PlotRecord
@@ -214,10 +216,10 @@ class WatlowEZZone(CoreDevice):
     coeff_string = Property
 
     use_pid_bin = Bool(True)
-    default_output=Int(1)
-    advanced_values_button=Button
-    min_output_scale=Float
-    max_output_scale=Float
+    default_output = Int(1)
+    advanced_values_button = Button
+    min_output_scale = Float
+    max_output_scale = Float
 
     #def _get_use_calibrated_temperature(self):
     #    return self._use_calibrated_temperature and self.calibration is not None
@@ -248,8 +250,8 @@ class WatlowEZZone(CoreDevice):
             config.add_section('Calibration')
 
         config.set('Calibration', 'coefficients', self.calibration.dump_coeffs())
-        with open(self.config_path, 'w') as fp:
-            config.write(fp)
+        with open(self.config_path, 'w') as wfile:
+            config.write(wfile)
 
     def map_temperature(self, te, verbose=True):
         if self.use_calibrated_temperature:
@@ -282,8 +284,13 @@ class WatlowEZZone(CoreDevice):
             self.initialization_hook()
 
             self._load_max_output()
-
             self.setup_consumer()
+
+            #debugging
+            of = self.read_output_function()
+            self.debug('%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Output function: {}'.format(of))
+
+            self.disable()
 
             return True
         else:
@@ -301,7 +308,7 @@ class WatlowEZZone(CoreDevice):
         mo = self.max_output_scale
         mi = self.min_output_scale
         # print oh, ol, mo, mi
-        self._max_output = (oh - ol) / (mo - mi)*100
+        self._max_output = (oh - ol) / (mo - mi) * 100
 
     def _program_memory_blocks(self):
         """
@@ -324,6 +331,15 @@ class WatlowEZZone(CoreDevice):
             for pa, pv in zip(pid_attrs, pid_vals):
                 setattr(self, pa, pv)
                 self.info('{} set to {}'.format(pa, pv))
+
+            ha = self.read_heat_algorithm()
+            self.info('heat algorithm: {}'.format(ha))
+
+            h = self.read_heat_hystersis()
+            self.info('hystersis: {}'.format(h))
+
+            hdb = self.read_heat_dead_band()
+            self.info('heat dead band: {}'.format(hdb))
             self.info('==================================================')
         return pid_vals
 
@@ -371,6 +387,17 @@ class WatlowEZZone(CoreDevice):
             v = getattr(self, func)()
             if v is not None:
                 setattr(self, attr, v)
+
+    #ResponseRecorder interface
+    def get_output(self, force=False):
+        if force:
+            self.get_temp_and_power()
+        return self.heat_power_value
+
+    def get_response(self, force=False):
+        if force:
+            self.get_temp_and_power()
+        return self.process_value
 
     def get_temp_and_power(self, verbose=False, **kw):
     #        if 'verbose' in kw and kw['verbose']:
@@ -451,6 +478,7 @@ class WatlowEZZone(CoreDevice):
     def load_additional_args(self, config):
         """
         """
+        self.set_attribute(config, 'use_pid_bin', 'Output', 'use_pid_bin', cast='boolean', default=False)
         self.set_attribute(config, 'min_output_scale', 'Output', 'scale_low', cast='float')
         self.set_attribute(config, 'max_output_scale', 'Output', 'scale_high', cast='float')
 
@@ -522,6 +550,25 @@ class WatlowEZZone(CoreDevice):
             self.debug('set_baudrate keyerror {}'.format(e))
 
     def set_closed_loop_setpoint(self, setpoint, set_pid=True, **kw):
+
+        # if setpoint == 0:
+        #     self._output_scale_low = 0
+        #     self.set_output_scale_low(0)
+        #
+        #     self._output_scale_high = 0
+        #     self.set_output_scale_high(0)
+        #
+        # else:
+        #     _mi, _ma=self.min_output_scale, self.max_output_scale
+        #     self._output_scale_low = _mi
+        #     self.set_output_scale_low(_mi)
+        #
+        #     self._output_scale_high = _ma
+        #     self.set_output_scale_high(_ma)
+
+            # self.output_scale_low = self.min_output_scale
+            # self.output_scale_high = self.max_output_scale
+
         self._clsetpoint = setpoint
         if self.use_calibrated_temperature and self.calibration:
             setpoint = self.map_temperature(setpoint)
@@ -570,15 +617,16 @@ class WatlowEZZone(CoreDevice):
         if mode=='open':
             self.output_scale_low=self.min_output_scale
             self.output_scale_high=self.max_output_scale
+            self._load_max_output()
 
-        self.info('setting control mode = %s' % mode)
+        self.info('setting control mode = {}'.format(mode))
         self._control_mode = mode
         value = 10 if mode == 'closed' else 54
         self.write(1880, value, **kw)
 
-    #===============================================================================
+    # ===============================================================================
     # Autotune
-    #===============================================================================
+    # ===============================================================================
     def autotune_finished(self, verbose=False, **kw):
         r = self.read(1920, response_type='int', verbose=verbose, **kw)
         try:
@@ -648,9 +696,9 @@ class WatlowEZZone(CoreDevice):
         self.info('setting TRU-TUNE+ gain {}'.format(value))
         self.write(1914, int(value), **kw)
 
-    #===============================================================================
+    # ===============================================================================
     #  PID
-    #===============================================================================
+    # ===============================================================================
     def set_pid(self, temp):
         """
             get pids from config
@@ -661,11 +709,17 @@ class WatlowEZZone(CoreDevice):
             pid_bin = self._get_pid_bin(temp)
             self.debug('pid bin for {}. {}'.format(temp, pid_bin))
             if pid_bin:
+                #clear I buffer
+                # self.I = 0
+
                 self.trait_set(Ph=pid_bin[0], I=pid_bin[2], D=pid_bin[3])
-                if len(pid_bin)==5:
-                    self.max_output=pid_bin[4]
+
+                self.report_pid()
+
+                if len(pid_bin) == 5:
+                    self.max_output = pid_bin[4]
                 else:
-                    self.max_output=100
+                    self.max_output = 100
 
     def set_heat_algorithm(self, value, **kw):
         self.info('setting heat algorithm {}'.format(value))
@@ -698,9 +752,9 @@ class WatlowEZZone(CoreDevice):
         register = 1898
         self.write(register, v, nregisters=2, **kw)
 
-    #===============================================================================
+    # ===============================================================================
     # Output
-    #===============================================================================
+    # ===============================================================================
     def set_output_function(self, value, **kw):
         inmap = {'heat': 36,
                  'off': 62}
@@ -745,7 +799,7 @@ class WatlowEZZone(CoreDevice):
 
     def set_high_power_scale(self, value, output=None, **kw):
         if output is None:
-            output=self.default_output
+            output = self.default_output
 
         self.info('set high power scale {}'.format(value))
         # register = 898 if output == 1 else 928
@@ -754,9 +808,15 @@ class WatlowEZZone(CoreDevice):
         v = max(0, min(100, value))
         self.write(register, v, nregisters=2, **kw)
 
-    #===============================================================================
+    # ===============================================================================
     # readers
-    #===============================================================================
+    # ===============================================================================
+    def read_heat_dead_band(self, **kw):
+        return self.read(1898, nregisters=2, nbytes=9, **kw)
+
+    def read_heat_hystersis(self, **kw):
+        return self.read(1900, nregisters=2, nbytes=9, **kw)
+
     def read_output_state(self, **kw):
         rid = str(self.read(1012, response_type='int', **kw))
         units_map = {'63': 'On', '62': 'Off'}
@@ -894,13 +954,13 @@ class WatlowEZZone(CoreDevice):
         if output is None:
             output = self.default_output
         self.info('read high power scale {}'.format(output))
-        register= 746 if output == 1 else 866
+        register = 746 if output == 1 else 866
         # register = 898 if output == 1 else 898
         # register = 898 if output == 1 else 928
         # r = self.read(register, nregisters=2, nbytes=9, **kw)
         r = self.read(register, nregisters=2, nbytes=9, **kw)
         if self.reciprocal_power:
-            r=100-r
+            r = 100 - r
 
         return r
 
@@ -914,9 +974,9 @@ class WatlowEZZone(CoreDevice):
     #        p = self.get_temperature()
     #        record_id = self.name
     #        self.stream_manager.record(p, record_id)
-    #===============================================================================
+    # ===============================================================================
     # setters
-    #===============================================================================
+    # ===============================================================================
     def _set_sensor1_type(self, v):
         self._sensor1_type = isensor_map[v]
         self.set_analog_input_sensor_type(1, self._sensor1_type)
@@ -937,21 +997,21 @@ class WatlowEZZone(CoreDevice):
     def _set_control_mode(self, mode):
         self.set_control_mode(mode)
 
-    def _validate_Pc(self, v):
-        if self._validate_number(v):
-            return self._validate_new(v, self._Pc_)
-
-    def _validate_Ph(self, v):
-        if self._validate_number(v):
-            return self._validate_new(v, self._Ph_)
-
-    def _validate_I(self, v):
-        if self._validate_number(v):
-            return self._validate_new(v, self._I_)
-
-    def _validate_D(self, v):
-        if self._validate_number(v):
-            return self._validate_new(v, self._D_)
+    # def _validate_Pc(self, v):
+    #     if self._validate_number(v):
+    #         return self._validate_new(v, self._Pc_)
+    #
+    # def _validate_Ph(self, v):
+    #     if self._validate_number(v):
+    #         return self._validate_new(v, self._Ph_)
+    #
+    # def _validate_I(self, v):
+    #     if self._validate_number(v):
+    #         return self._validate_new(v, self._I_)
+    #
+    # def _validate_D(self, v):
+    #     if self._validate_number(v):
+    #         return self._validate_new(v, self._D_)
 
     def _set_Ph(self, v):
         if v is not None:
@@ -1037,19 +1097,13 @@ class WatlowEZZone(CoreDevice):
         self.set_dead_band(v)
 
     def _set_max_output(self, v):
+        if v>0:
+            self.output_scale_low=self.min_output_scale
+
         v=(self.max_output_scale-self.min_output_scale)*v/100.+self.output_scale_low
         self.output_scale_high=v
         # self.set_output_scale_high(v)
         self._load_max_output()
-
-        # self._max_output = v
-        # if self.reciprocal_power:
-        #     v=100-v
-        #
-        # self.set_high_power_scale(v)
-        # p=self.read_high_power_scale()
-        # if p is not None:
-        #     self._max_output=p
 
     def _validate_max_output(self, v):
         return self._validate_number(v)
@@ -1064,13 +1118,17 @@ class WatlowEZZone(CoreDevice):
         if abs(new - old) > tol:
             return new
 
-    #===============================================================================
+    # ===============================================================================
     # getters
-    #===============================================================================
+    # ===============================================================================
     def _get_pid_bin(self, temp):
         """
             load pid_bins from file
         """
+        if not self.configuration_dir_path:
+            self.debug('no configuration_dir_path. this device was not initialized. check initialization.xml')
+            return
+
         p = os.path.join(self.configuration_dir_path, 'pid.csv')
         if not os.path.isfile(p):
             self.warning('No pid.csv file in configuration dir. {}'.format(self.configuration_dir_path))
@@ -1084,7 +1142,8 @@ class WatlowEZZone(CoreDevice):
                 return lines[i][1:]
         else:
             t = lines[-1][0]
-            self.warning('could not find appropriate bin for in pid file. using pid for {} bin. temp={}'.format(t, temp))
+            self.warning(
+                'could not find appropriate bin for in pid file. using pid for {} bin. temp={}'.format(t, temp))
             return lines[-1][1:]
 
     def _get_autotune_label(self):
@@ -1162,9 +1221,9 @@ class WatlowEZZone(CoreDevice):
     def _get_max_output(self):
         return self._max_output
 
-    #===============================================================================
+    # ===============================================================================
     # handlers
-    #===============================================================================
+    # ===============================================================================
     def _autotune_fired(self):
         if self.autotuning:
             self.stop_autotune()
@@ -1202,7 +1261,7 @@ class WatlowEZZone(CoreDevice):
                         tooltip='Set PID parameters based on setpoint'),
                    Item('use_calibrated_temperature',
                         label='Use Calibration'),
-                   Item('coeff_string',show_label=False, enabled_when='use_calibrated_temperature')),
+                   Item('coeff_string', show_label=False, enabled_when='use_calibrated_temperature')),
             Item('closed_loop_setpoint',
                  style='custom',
                  label='setpoint',
@@ -1218,12 +1277,12 @@ class WatlowEZZone(CoreDevice):
                                                   low_name='olsmin', high_name='olsmax'),
                                visible_when='control_mode=="open"'))
 
-        tune_grp=HGroup(Item('enable_tru_tune'),
-                        Item('tru_tune_gain', label='Gain', tooltip='1:Most overshot, 6:Least overshoot'))
+        tune_grp = HGroup(Item('enable_tru_tune'),
+                          Item('tru_tune_gain', label='Gain', tooltip='1:Most overshot, 6:Least overshoot'))
         cg = VGroup(HGroup(
             Item('control_mode', editor=EnumEditor(values=['closed', 'open'])),
-                           Item('max_output', label='Max Output %', format_str='%0.1f'),
-                           icon_button_editor('advanced_values_button','cog')),
+            Item('max_output', label='Max Output %', format_str='%0.1f'),
+            icon_button_editor('advanced_values_button', 'cog')),
                     tune_grp,
                     closed_grp, open_grp)
         return cg
@@ -1305,7 +1364,7 @@ if __name__ == '__main__':
                      configuration_dir_name='diode')
     w.bootstrap()
     w.configure_traits(view='configure_view')
-#============================== EOF ==========================
+# ============================== EOF ==========================
 #        #read pid parameters
 #        ph = self.read_heat_proportional_band()
 #        if ph is not None:

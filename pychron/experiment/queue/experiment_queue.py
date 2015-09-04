@@ -1,63 +1,201 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
-from itertools import groupby
-
-from traits.api import Any, on_trait_change, Int, List, Bool, Instance
+# ============= enthought library imports =======================
+from traits.api import Any, on_trait_change, Int, List, Bool, \
+    Instance, Property, Str, HasTraits, Event, Long
+from traits.trait_types import Date
+from traitsui.api import View, Item
 from pyface.timer.do_later import do_later
-
-#============= standard library imports ========================
-
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+import time
+from itertools import groupby
+import os
+# ============= local library imports  ==========================
+from pychron.core.helpers.ctx_managers import no_update
+from pychron.core.helpers.filetools import replace_extension
+from pychron.core.ui.qt.tabular_editor import MoveToRow
 from pychron.experiment.queue.base_queue import BaseExperimentQueue
+from pychron.experiment.queue.select_attr_view import SelectAttrView
 from pychron.experiment.utilities.identifier import make_runid
 from pychron.experiment.utilities.human_error_checker import HumanErrorChecker
-from pychron.experiment.queue.experiment_queue_action import ExperimentQueueAction
+# from pychron.experiment.conditional.experiment_queue_action import ExperimentQueueAction
 from pychron.experiment.utilities.uv_human_error_checker import UVHumanErrorChecker
 from pychron.core.ui.gui import invoke_in_main_thread
+from pychron.paths import paths
+
+
+class RepeatRunBlockView(HasTraits):
+    value = Int
+
+    def traits_view(self):
+        v = View(Item('value', label='Repeat'),
+                 kind='modal',
+                 title='Repeat Selected Run Block',
+                 width=300,
+                 buttons=['OK', 'Cancel'])
+        return v
+
+
+class NewRunBlockView(HasTraits):
+    name = Str
+
+    def traits_view(self):
+        v = View(Item('name'),
+                 kind='modal',
+                 title='New Run Block',
+                 buttons=['OK', 'Cancel'],
+                 width=200)
+        return v
 
 
 class ExperimentQueue(BaseExperimentQueue):
-#     current_run = Any
-    selected = Any
     executed_selected = Any
     dclicked = Any
-    database_identifier = Int
+    database_identifier = Long
     executed_runs = List
     executed_runs_scroll_to_row = Int
     automated_runs_scroll_to_row = Int
-    linked_copy_cache = List
-    queue_actions = List
+    # linked_copy_cache = List
+    start_timestamp = Date
+    # queue_actions = List
+    auto_save_detector_ic = Bool
 
     executed = Bool(False)
 
     human_error_checker = Instance(HumanErrorChecker, ())
+    execution_ratio = Property
 
+    refresh_blocks_needed = Event
+    _auto_save_time = 0
+
+    def auto_save(self):
+        if self._auto_save_time and time.time() - self._auto_save_time < 0.25:
+            return
+
+        self._auto_save_time = time.time()
+        path = self.path
+        if os.path.isfile(path):
+            bk = os.path.join(paths.auto_save_experiment_dir, '{}.bak'.format(self.name))
+        else:
+            bk = os.path.join(paths.auto_save_experiment_dir, 'Untitled.bak')
+
+        self.debug('Autosaving to {}'.format(bk))
+        with open(bk, 'w') as wfile:
+            self.dump(wfile)
+
+    def toggle_skip(self):
+        for si in self.selected:
+            si.skip = not si.skip
+        self.selected = []
+        self.refresh_table_needed = True
+
+    def end_after(self):
+        sel = self.selected
+        for ai in self.automated_runs:
+            if ai not in sel:
+                ai.end_after = False
+
+        si = sel[-1]
+        si.end_after = not si.end_after
+        self.selected = []
+        self.refresh_table_needed = True
+
+    def repeat_block(self):
+        rbv = RepeatRunBlockView()
+        info = rbv.edit_traits()
+        if info.result:
+            self.add_runs(self.selected, freq=rbv.value, is_repeat_block=True)
+
+    def make_run_block(self):
+        nrbv = NewRunBlockView()
+        info = nrbv.edit_traits()
+        if info.result:
+            p = os.path.join(paths.run_block_dir, '{}.txt'.format(nrbv.name))
+            with open(p, 'w') as wfile:
+                self.dump(wfile, runs=self.selected, include_meta=False)
+            self.refresh_blocks_needed = True
+
+    def move_selected_to_row(self):
+        e = MoveToRow()
+        info = e.edit_traits()
+        if info.result:
+            self._move_selected(e.row - 1)
+
+    def move_selected_first(self):
+        self._move_selected(0)
+
+    def move_selected_last(self):
+        with no_update(self):
+            for si in self.selected:
+                self.automated_runs.remove(si)
+            self.automated_runs.extend(self.selected)
+
+    def jump_to_end(self):
+        self.automated_runs_scroll_to_row = len(self.automated_runs) - 1
+
+    def jump_to_start(self):
+        self.automated_runs_scroll_to_row = 0
+
+    def select_unknowns(self):
+        def test(ss):
+            return ss.analysis_type == 'unknown'
+
+        self.selected = [si for si in self.cleaned_automated_runs if test(si)]
+
+    def select_same(self):
+        ident = self.selected[0].identifier
+        self._select_same(lambda si: si.identifier == ident)
+
+    def select_same_attr(self):
+
+        hs, attrs = self._get_dump_attrs()
+        hs = list(attrs)
+
+        ev = SelectAttrView(available_attributes=hs)
+        info = ev.edit_traits()
+        if info.result:
+            if ev.attributes:
+
+                s = self.selected[0]
+                def test(v):
+                    return all([getattr(v, k) == getattr(s, k) for k in ev.attributes])
+
+                self._select_same(test)
+
+    def _select_same(self, test):
+        self.selected = [si for si in self.cleaned_automated_runs if test(si)]
 
     def count_labnumber(self, ln):
         ans = [ai for ai in self.automated_runs if ai.labnumber == ln]
         i = 0
-        for args in groupby(ans, key=lambda x: x.user_defined_aliquot):
+        for _ in groupby(ans, key=lambda x: x.user_defined_aliquot):
             i += 1
         return i
 
+    # def count_labnumber(self, ln):
+    # ans = [ai for ai in self.automated_runs if ai.labnumber == ln]
+    # i = 0
+    # for args in groupby(ans, key=lambda x: x.user_defined_aliquot):
+    # i += 1
+    # return i
+
     def select_run_idx(self, idx):
         if self.automated_runs:
-                self.selected = self.automated_runs[idx:idx + 1]
+            self.selected = self.automated_runs[idx:idx + 1]
 
     def reset(self):
         """
@@ -101,28 +239,91 @@ class ExperimentQueue(BaseExperimentQueue):
             self.executed_runs.append(run)
             idx = len(self.executed_runs) - 1
             invoke_in_main_thread(do_later, lambda: self.trait_set(executed_runs_scroll_to_row=idx))
-            self.debug('$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ set ex scroll to {}'.format(idx))
+            # self.debug('$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ set ex scroll to {}'.format(idx))
         else:
             self.debug('Problem removing {}'.format(aid))
 
         self._no_update = False
 
-    def _find_run(self, aid):
-        return next((a for a in self.automated_runs
-                     if make_runid(a.labnumber, a.aliquot, a.step) == aid), None)
-
     def executed_paste_function(self, obj):
-        return
+        ci = self.paste_function(obj)
+        return ci
 
     def paste_function(self, obj):
 
         ci = obj.clone_traits()
         ci.state = 'not run'
-        if obj.user_defined_aliquot:
-            ci.aliquot = obj.aliquot
-        else:
-            ci.aliquot = 0
+        ci.aliquot = 0
+        ci.step = -1
+        ci.conflicts_checked = False
+
+        if ci.is_step_heat():
+            ci.user_defined_aliquot = ci.aliquot
+
         return ci
+
+    # def _load_meta(self, meta):
+    #     super(ExperimentQueue, self)._load_meta(meta)
+    #     if 'actions' in meta:
+    #         self.queue_actions = [ExperimentQueueAction(astr)
+    #                               for astr in meta['actions']]
+    #     else:
+    #         self.debug('no actions provided for this queue')
+
+    def is_executable(self):
+        if self.check_runs():
+            # test scripts
+            return all([ai.executable for ai in self.cleaned_automated_runs])
+
+    def check_runs(self):
+        hec = self.human_error_checker
+        err = hec.check_runs(self.cleaned_automated_runs, test_all=True)
+        if err:
+            hec.report_errors(err)
+            return
+
+        return True
+
+    def new_runs_generator(self):
+        runs = self.cleaned_automated_runs
+        runs = [ri for ri in runs if ri.executable]
+        rgen = (r for r in runs)
+        return rgen, len(runs)
+
+    # private
+    def _find_run(self, aid):
+        return next((a for a in self.automated_runs
+                     if make_runid(a.labnumber, a.aliquot, a.step) == aid), None)
+
+    def _load_actions(self):
+        pass
+
+    def _load_meta_hook(self, meta):
+        bool_default = lambda x: bool(x) if x else False
+        self._set_meta_param('auto_save_detector_ic', meta, bool_default)
+        self.debug('$$$$$$$$$$$$$$$$$$$$$ auto_save_detector_ic={}'.format(self.auto_save_detector_ic))
+
+    def _get_execution_ratio(self):
+        ex = len(self.executed_runs)
+        tc = len(self.cleaned_automated_runs) + ex
+        return '{}/{}'.format(ex, tc)
+
+    def _move_selected(self, idx):
+        with no_update(self):
+            for si in self.selected:
+                self.automated_runs.remove(si)
+
+            for si in reversed(self.selected):
+                self.automated_runs.insert(idx, si)
+
+    def _extract_device_changed(self):
+        self.debug('extract device changed {}'.format(self.extract_device))
+        if 'uv' in self.extract_device.lower():
+            k = UVHumanErrorChecker
+        else:
+            k = HumanErrorChecker
+
+        self.human_error_checker = k()
 
     @on_trait_change('automated_runs[]')
     def _refresh_info(self, new):
@@ -136,54 +337,13 @@ class ExperimentQueue(BaseExperimentQueue):
     def _refresh_table1(self):
         self.refresh_table_needed = True
 
-    def _load_meta(self, meta):
-        super(ExperimentQueue, self)._load_meta(meta)
-        if 'actions' in meta:
-            self.queue_actions = [ExperimentQueueAction(astr)
-                                  for astr in meta['actions']]
-
-        else:
-            self.debug('no actions provided for this queue')
-
-    def _load_actions(self):
-        pass
-
-    def isExecutable(self):
-        if self.check_runs():
-            # test scripts
-            return all([ai.executable for ai in self.automated_runs])
-
-    def check_runs(self):
-        hec = self.human_error_checker
-        err = hec.check_runs(self.automated_runs, test_all=True)
-        if err:
-            hec.report_errors(err)
-            return
-
-        return True
-
-    def new_runs_generator(self):
-        runs = self.cleaned_automated_runs
-        runs = [ri for ri in runs if ri.executable]
-        rgen = (r for r in runs)
-        return rgen, len(runs)
-
-    def _extract_device_changed(self):
-        self.debug('extract device changed {}'.format(self.extract_device))
-        if 'uv' in self.extract_device.lower():
-            k = UVHumanErrorChecker
-        else:
-            k = HumanErrorChecker
-
-        self.human_error_checker = k()
-
-#============= EOF =============================================
-#        rgen = (r for r in newruns)
-#        runs = self.executed_runs+self.cleaned_automated_runs
+# ============= EOF =============================================
+# rgen = (r for r in newruns)
+# runs = self.executed_runs+self.cleaned_automated_runs
 #
-#        runs = [ri for ri in runs if ri.executable]
+# runs = [ri for ri in runs if ri.executable]
 #
-#        n = len(runs)
+# n = len(runs)
 #        rgen = (r for r in runs)
 #        if last_ran is not None:
 #            # get index of last run in self.automated_runs

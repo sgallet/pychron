@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,13 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
-from traits.api import HasTraits, List, Property, Any, on_trait_change, Instance
-#============= standard library imports ========================
+# ============= enthought library imports =======================
+from traits.api import HasTraits, List, Property, Any, Instance
+# ============= standard library imports ========================
 from itertools import groupby
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
+from pychron.processing.plotters.layout import FigureLayout
+
 
 class FigureModel(HasTraits):
     panels = List
@@ -26,6 +28,9 @@ class FigureModel(HasTraits):
     analyses = List
     plot_options = Any
     _panel_klass = Instance('pychron.processing.plotters.figure_panel.FigurePanel')
+    titles = List
+
+    layout = Instance(FigureLayout, ())
 
     def refresh(self):
         for p in self.panels:
@@ -44,8 +49,11 @@ class FigureModel(HasTraits):
         for pp, meta in zip(self.panels, metadata):
             pp.load_metadata(meta)
 
-    @on_trait_change('analyses[]')
-    def _analyses_items_changed(self):
+    # @on_trait_change('analyses[]')
+    # def _analyses_items_changed(self):
+    #     self.refresh_panels()
+
+    def refresh_panels(self):
         ps = self._make_panels()
         self.panels = ps
         self.panel_gen = (gi for gi in self.panels)
@@ -57,6 +65,14 @@ class FigureModel(HasTraits):
                                 plot_options=self.plot_options,
                                 graph_id=gid)
               for gid, ais in groupby(ans, key=key)]
+
+        if self.titles:
+            for ti, gi in zip(self.titles, gs):
+                gi.title = ti
+        elif self.plot_options.auto_generate_title:
+            for i, gi in enumerate(gs):
+                gi.title = self.plot_options.generate_title(gi.analyses, i)
+
         return gs
 
     def _get_npanels(self):
@@ -65,4 +81,4 @@ class FigureModel(HasTraits):
     def next_panel(self):
         return self.panel_gen.next()
 
-        #============= EOF =============================================
+        # ============= EOF =============================================

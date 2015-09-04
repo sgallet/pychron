@@ -1,29 +1,29 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from traits.api import HasTraits, List, on_trait_change, Any, Event
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 from pychron.canvas.canvas2D.scene.primitives.primitives import Primitive
 from pychron.canvas.canvas2D.scene.layer import Layer
 from canvas_parser import CanvasParser
 
 
-#class PrimitiveNode(TreeNode):
+# class PrimitiveNode(TreeNode):
 #    add = List([Primitive])
 #    move = List([Primitive])
 
@@ -31,10 +31,9 @@ from canvas_parser import CanvasParser
 #        print obj, 'asdf'
 
 
-
-
 class Scene(HasTraits):
     layers = List
+    overlays = List
     parser = None
     #     parser = Instance(CanvasParser)
     #     scene_browser = Instance(SceneBrowser)
@@ -67,15 +66,41 @@ class Scene(HasTraits):
         '''
         pass
 
-    def render_components(self, gc, canvas):
-        for li in self.layers:
-            if li.visible:
-                for ci in li.components:
-                    if self.font:
-                        ci.font = self.font
+    def render_overlays(self, gc, canvas):
+        x1, x2 = canvas.get_mapper_limits('index')
+        y1, y2 = canvas.get_mapper_limits('value')
 
-                    ci.set_canvas(canvas)
-                    ci.render(gc)
+        bounds = x1, x2, y1, y2
+        self._render(gc, canvas, self.overlays, bounds)
+
+    def render_components(self, gc, canvas):
+        # only render components within the current bounds.
+
+        x1, x2 = canvas.get_mapper_limits('index')
+        y1, y2 = canvas.get_mapper_limits('value')
+
+        bounds = x1, x2, y1, y2
+        self._render(gc, canvas, (ci for li in self.layers if li.visible
+                                  for ci in li.components
+                                  if ci.scene_visible and ci.visible), bounds)
+
+        # for li in self.layers:
+        # if li.visible:
+
+        # for ci in li.components:
+        # if ci.is_in_region(x1, x2, y1, y2):
+        #         if self.font:
+        #             ci.font = self.font
+        #         ci.set_canvas(canvas)
+        #         ci.render(gc)
+
+    def _render(self, gc, canvas, components, bounds):
+        for ci in components:
+            if ci.is_in_region(*bounds):
+                if self.font:
+                    ci.font = self.font
+                ci.set_canvas(canvas)
+                ci.render(gc)
 
     def iteritems(self, exclude=None, klass=None):
         if exclude is None:
@@ -100,10 +125,10 @@ class Scene(HasTraits):
                 if test(ci))
 
     def get_items(self, klass=None):
-    #         return [ci for li in self.layers
-    #                 for ci in li.components
-    #                     if isinstance(ci, klass)]
-    #
+        #         return [ci for li in self.layers
+        #                 for ci in li.components
+        #                     if isinstance(ci, klass)]
+        #
         comps = (ci for li in self.layers
                  for ci in li.components)
         if klass:
@@ -118,7 +143,6 @@ class Scene(HasTraits):
             cb = True
             if klass is not None:
                 cb = isinstance(la, klass)
-
             return cb and (nb or ib)
 
         layers = self.layers
@@ -129,6 +153,10 @@ class Scene(HasTraits):
             nn = next((ll for ll in li.components if test(ll)), None)
             if nn is not None:
                 return nn
+        else:
+            for o in self.overlays:
+                if test(o):
+                    return o
 
     def add_item(self, v, layer=None):
         if layer is None:
@@ -149,6 +177,15 @@ class Scene(HasTraits):
             layer = self.layers[layer]
 
         layer.add_item(v)
+
+    def remove_klass(self, klass, layer=None):
+        if layer is None:
+            layers = self.layers
+        else:
+            layers = (self.layers[layer],)
+
+        for li in layers:
+            li.remove_klass(klass)
 
     def remove_item(self, v, layer=None):
         if layer is None:
@@ -172,10 +209,10 @@ class Scene(HasTraits):
         for li in layers:
             li.pop_item(v, klass=klass)
 
-        #        layer[key] = v
-        #===============================================================================
-        # handlers
-        #===============================================================================
+            #        layer[key] = v
+            # ===============================================================================
+            # handlers
+            # ===============================================================================
 
     def _selected_changed(self, name, old, new):
         if issubclass(type(new), Primitive):
@@ -247,4 +284,4 @@ class Scene(HasTraits):
 #         sb = SceneBrowser(layers=self.layers)
 # #        self.on_trait_change(sb._update_layers, 'layers, layers[]')
 #         return sb
-#============= EOF =============================================
+# ============= EOF =============================================

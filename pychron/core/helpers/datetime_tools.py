@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
 
 
@@ -30,27 +30,9 @@ def time_generator(start=None):
         yield time.time() - start
 
 
-def current_time_generator(start):
-    '''
-    '''
-    yt = start
-    prev_time = 0
-    i = 0
-    while (1):
-
-        current_time = time.time()
-        if prev_time != 0:
-            interval = current_time - prev_time
-            yt += interval
-
-        yield (yt)
-        prev_time = current_time
-        i += 1
-
-
 def generate_datetimestamp(resolution='seconds'):
-    '''
-    '''
+    """
+    """
     ti = time.time()
     if resolution == 'seconds':
         r = time.strftime(ISO_FORMAT_STR)

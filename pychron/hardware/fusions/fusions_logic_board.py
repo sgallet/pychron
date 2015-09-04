@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 from pychron.hardware.kerr.kerr_manager import KerrManager
 from pychron.hardware.meter_calibration import MeterCalibration
 
@@ -21,13 +21,13 @@ Fusions Control board
 a combination of the logic board and the kerr microcontroller
 see Photon Machines Logic Board Command Set for additional information
 '''
-#=============enthought library imports=======================
+# =============enthought library imports=======================
 from traits.api import Instance, Str, Float, List, Event
 # from traitsui.api import Item, VGroup, RangeEditor
 from traitsui.api import Item, ListEditor, Group
-#=============standard library imports ========================
+# =============standard library imports ========================
 import os
-#=============local library imports  ==========================
+# =============local library imports  ==========================
 from pychron.globals import globalv
 # from fusions_motor_configurer import FusionsMotorConfigurer
 from pychron.hardware.core.core_device import CoreDevice
@@ -67,16 +67,19 @@ class FusionsLogicBoard(CoreDevice):
 
     def _calibration_factory(self, calibration):
         coeffs = None
+        nmapping = False
         if calibration == 'watts':
             config = self.get_configuration()
-            coeffs = self._get_watt_calibration_coefficients(config)
+            coeffs, nmapping = self._get_watt_calibration(config)
 
         if coeffs is None:
             coeffs = [1, 0]
-        return MeterCalibration(coeffs)
 
-    def _get_watt_calibration_coefficients(self, config):
+        return MeterCalibration(coeffs, normal_mapping=bool(nmapping))
+
+    def _get_watt_calibration(self, config):
         coeffs = [1, 0]
+        nmapping = False
         section = 'PowerOutput'
         if config.has_section(section):
             cs = config.get(section, 'coefficients')
@@ -86,7 +89,10 @@ class FusionsLogicBoard(CoreDevice):
                 self.warning_dialog('Invalid power calibration {}'.format(cs))
                 return
 
-        return coeffs
+            if config.has_option(section, 'normal_mapping'):
+                nmapping = config.getboolean(section, 'normal_mapping')
+
+        return coeffs, nmapping
 
     def get_calibrated_power(self, request, calibration='watts', verbose=True):
     #        coeffs = [1, 0]
@@ -114,7 +120,9 @@ class FusionsLogicBoard(CoreDevice):
         if self._communicator.handle is None or resp is not True:
             if not globalv.ignore_initialization_warnings:
             #                    warning(None, 'Laser not connected. Power cycle USB hub.')
-                result = self.confirmation_dialog('Laser not connected. Power cycle USB hub.', title='Quit Pychron')
+                result = self.confirmation_dialog('Laser not connected. To reconnect select "Yes", '
+                                                  'power cycle USB hub, and restart program.'
+                                                  '\nYes=Quit Pychron.\nNo=Continue', title='Quit Pychron')
                 if result:
                     os._exit(0)
 
@@ -152,7 +160,7 @@ class FusionsLogicBoard(CoreDevice):
             v = config.get('Motors', option)
             self.add_motor(option, v)
 
-        if not self._get_watt_calibration_coefficients(config):
+        if not self._get_watt_calibration(config):
             return
 
         return True
@@ -270,9 +278,9 @@ class FusionsLogicBoard(CoreDevice):
     #        fc = FusionsMotorConfigurer(motors=[self.zoom_motor, self.beam_motor])
     #        fc.edit_traits()
 
-    #==============================================================================
+    # ==============================================================================
     # laser methods
-    #==============================================================================
+    # ==============================================================================
     def check_interlocks(self, verbose=True):
         '''
         '''
@@ -302,7 +310,7 @@ class FusionsLogicBoard(CoreDevice):
 
         return lock_bits
 
-    def _enable_laser(self):
+    def _enable_laser(self, **kw):
         '''
         '''
         interlocks = self.check_interlocks()
@@ -339,14 +347,14 @@ class FusionsLogicBoard(CoreDevice):
 
         return True
 
-    def _set_laser_power_(self, *args, **kw):
-        '''
-        '''
+    def set_laser_power(self, *args, **kw):
+        """
+        """
         pass
 
     def set_pointer_onoff(self, onoff):
-        '''
-        '''
+        """
+        """
         if onoff:
             cmd = 'DRV1 1'
         else:
@@ -378,9 +386,9 @@ class FusionsLogicBoard(CoreDevice):
     #        '''
     #        return KerrMotor(name='beameere', parent=self)
 
-    #==============================================================================
+    # ==============================================================================
     # motor methods
-    #==============================================================================
+    # ==============================================================================
     def set_motor(self, name, value, block=False,
                   relative=False):
 
@@ -476,4 +484,4 @@ class FusionsLogicBoard(CoreDevice):
 #                      Item('update_beam', editor=ube, show_label=False),
 #                      )
 
-#================== EOF ================================================
+# ================== EOF ================================================

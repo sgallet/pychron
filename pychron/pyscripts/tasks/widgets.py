@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,9 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from PySide import QtGui, QtCore
 from PySide.QtCore import Qt
 from PySide.QtGui import QTextCursor, QTextEdit, QTextFormat, QCursor, QApplication, QTextCharFormat
@@ -22,16 +22,25 @@ from pyface.ui.qt4.code_editor.code_widget import AdvancedCodeWidget, CodeWidget
 from pyface.ui.qt4.code_editor.find_widget import FindWidget
 from pyface.ui.qt4.code_editor.replace_widget import ReplaceWidget
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 from pychron.pyscripts.tasks.pyscript_lexer import PyScriptLexer
 
 
 class myCodeWidget(CodeWidget):
-    dclicked=QtCore.Signal((str,))
-    modified_select=QtCore.Signal((str,))
-    _current_pos=None
-    gotos=['gosub']
+    dclicked = QtCore.Signal((str,))
+    modified_select = QtCore.Signal((str,))
+    alt_select = QtCore.Signal((str,int, int))
+
+    _current_pos = None
+    gotos = ['gosub']
+
+    popup = None
+
+    def __init__(self, *args, **kw):
+        super(myCodeWidget, self).__init__(*args, **kw)
+
+        self.setMouseTracking(True)
 
     def keyPressEvent(self, event):
         super(myCodeWidget, self).keyPressEvent(event)
@@ -44,6 +53,9 @@ class myCodeWidget(CodeWidget):
         super(myCodeWidget, self).keyReleaseEvent(event)
         # self.setMouseTracking(False)
         QApplication.restoreOverrideCursor()
+        if self.popup:
+            self.popup.close()
+            self.popup = None
 
     def clear_selected(self):
         # self.setMouseTracking(False)
@@ -51,13 +63,27 @@ class myCodeWidget(CodeWidget):
         QApplication.restoreOverrideCursor()
 
     def clear_underline(self):
-        cursor=self.textCursor()
+        cursor = self.textCursor()
         cursor.select(QTextCursor.Document)
-        fmt=cursor.charFormat()
+        fmt = cursor.charFormat()
         fmt.setFontUnderline(False)
         cursor.beginEditBlock()
         cursor.setCharFormat(fmt)
         cursor.endEditBlock()
+
+    def replace_selection(self, txt):
+
+        cursor = self.textCursor()
+        #  #     QtGui.QTextCursor.StartOfLine, QtGui.QTextCursor.KeepAnchor, txt.count('\n'))
+        cursor.beginEditBlock()
+        cursor.removeSelectedText()
+        cursor.insertText(txt)
+        cursor.endEditBlock()
+        # cursor.movePosition(
+        #     QtGui.QTextCursor.Left, QtGui.QTextCursor.MoveAnchor,len(txt))
+        # cursor.movePosition(
+        #     QtGui.QTextCursor.Right, QtGui.QTextCursor.KeepAnchor,len(txt))
+        self.setTextCursor(cursor)
 
     def mouseMoveEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
@@ -66,7 +92,7 @@ class myCodeWidget(CodeWidget):
 
             for goto in self.gotos:
                 if line.strip().startswith(goto):
-                    fmt=QTextCharFormat()
+                    fmt = QTextCharFormat()
                     fmt.setFontUnderline(True)
                     fmt.setUnderlineStyle(QTextCharFormat.WaveUnderline)
                     fmt.setUnderlineColor(QtGui.QColor('blue'))
@@ -81,17 +107,28 @@ class myCodeWidget(CodeWidget):
 
         super(myCodeWidget, self).mouseMoveEvent(event)
 
-    def mousePressEvent(self,event):
-        if event.modifiers() & Qt.ControlModifier:
-            cursor, line=self._get_line_cursor(event.pos())
+    # def mouseReleaseEvent(self, event):
+    #     if event.modifiers() & Qt.AltModifier:
+    #         print 'popup', self.popup
+    #         if self.popup:
+    #             self.popup.close()
+    #             self.popup = None
+
+    def mousePressEvent(self, event):
+        if event.modifiers() & Qt.ControlModifier: # on Mac OSX "command"
+            cursor, line = self._get_line_cursor(event.pos())
             self.modified_select.emit(line.strip())
             self.clear_selected()
+        elif event.modifiers() & Qt.AltModifier: # On Mac OSX "option"
+            cursor, line = self._get_line_cursor(event.pos())
+            pt = self.mapToGlobal(event.pos())
+            self.alt_select.emit(line.strip(), pt.x(), pt.y())
 
-        self._current_pos=None
+        self._current_pos = None
         super(myCodeWidget, self).mousePressEvent(event)
 
     def get_current_line(self):
-        cursor=self.textCursor()
+        cursor = self.textCursor()
         cursor.select(QTextCursor.LineUnderCursor)
         line = cursor.selectedText()
         return line.strip()
@@ -102,22 +139,20 @@ class myCodeWidget(CodeWidget):
         line = cursor.selectedText()
         return cursor, line
 
-
     def mouseDoubleClickEvent(self, event):
         self.clear_selected()
 
-        self._current_pos=event.pos()
-        cursor, line=self._get_line_cursor(self._current_pos)
+        self._current_pos = event.pos()
+        cursor, line = self._get_line_cursor(self._current_pos)
         self.dclicked.emit(line.strip())
-
 
     def replace_command(self, cmd):
         if self._current_pos:
-            cursor, line=self._get_line_cursor(self._current_pos)
-            lead=len(line)-len(line.lstrip())
+            cursor, line = self._get_line_cursor(self._current_pos)
+            lead = len(line) - len(line.lstrip())
             cursor.beginEditBlock()
             cursor.removeSelectedText()
-            cursor.insertText('{}{}'.format(' '*lead,cmd))
+            cursor.insertText('{}{}'.format(' ' * lead, cmd))
             cursor.endEditBlock()
 
 
@@ -128,7 +163,7 @@ class myAdvancedCodeWidget(AdvancedCodeWidget):
         QtGui.QWidget.__init__(self, parent)
 
         self.setAcceptDrops(True)
-        self.commands=commands
+        self.commands = commands
         self.code = myCodeWidget(self, font=font)
 
         #set lexer manually instead of by name
@@ -137,7 +172,7 @@ class myAdvancedCodeWidget(AdvancedCodeWidget):
         self.code.setMouseTracking(True)
 
         #AdvanceCodeWidget
-        #=====================================
+        # =====================================
         self.find = FindWidget(self)
         self.find.hide()
         self.replace = ReplaceWidget(self)
@@ -170,7 +205,33 @@ class myAdvancedCodeWidget(AdvancedCodeWidget):
         layout.addWidget(self.replace)
 
         self.setLayout(layout)
-        #=====================================
+
+        self.edit_color = QtGui.QColor('blue').lighter(175)
+        # =====================================
+
+    def insert_command(self, cmd):
+        cur = self.code.textCursor()
+        self._insert_command(cmd, cur)
+
+    def _insert_command(self, cmd, cur):
+        text = cmd.to_string()
+        if text:
+            # get the indent level of the line
+            # if line starts with a special keyword add indent
+
+            block = cur.block()
+            line = block.text()
+            indent = max(4, self.code._get_indent_position(line))
+            line = line.strip()
+            token = line.split(' ')[0]
+            token = token.strip()
+
+            if token in ('if', 'for', 'while', 'with', 'def', 'class'):
+                indent += 4
+
+            indent = ' ' * indent
+            cur.movePosition(QTextCursor.EndOfLine)
+            cur.insertText('\n{}{}'.format(indent, text))
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasFormat('traits-ui-tabular-editor'):
@@ -180,44 +241,33 @@ class myAdvancedCodeWidget(AdvancedCodeWidget):
 
     def dropEvent(self, e):
         mime = e.mimeData()
-        idx = mime.data('traits-ui-tabular-editor')
-
+        data = mime.data('traits-ui-tabular-editor')
+        idx = int(data.split(' ')[1])
         #        cmd = ''
-        cmd = self.commands.command_objects[int(idx)]
+        cmd = self.commands.command_objects[idx]
         if cmd:
-            text = cmd.to_string()
-            if text:
-                cur = self.code.cursorForPosition(e.pos())
+            cur = self.code.cursorForPosition(e.pos())
+            self._insert_command(cmd, cur)
 
-                # get the indent level of the line
-                # if line starts with a special keyword add indent
+    def highlight_line(self, lineno=None):
+        if lineno is None:
+            color = self.edit_color
+        else:
+            color = self.code.line_highlight_color
 
-                block = cur.block()
-                line = block.text()
-                indent = max(4, self.code._get_indent_position(line))
-                line = line.strip()
-                token = line.split(' ')[0]
-                token = token.strip()
-
-                if token in ('if', 'for', 'while', 'with', 'def', 'class'):
-                    indent += 4
-
-                indent = ' ' * indent
-                cur.movePosition(QTextCursor.EndOfLine)
-                cur.insertText('\n{}{}'.format(indent, text))
-
-    def highlight_line(self, lineno):
         selection = QTextEdit.ExtraSelection()
-        selection.format.setBackground(self.code.line_highlight_color)
+        selection.format.setBackground(color)
         selection.format.setProperty(
             QTextFormat.FullWidthSelection, True)
 
-        doc = self.code.document()
-        block = doc.findBlockByLineNumber(lineno - 1)
-        pos = block.position()
         selection.cursor = self.code.textCursor()
-        selection.cursor.setPosition(pos)
-        selection.cursor.clearSelection()
+        if lineno is not None:
+            doc = self.code.document()
+            block = doc.findBlockByLineNumber(lineno - 1)
+            pos = block.position()
+            selection.cursor.setPosition(pos)
+            selection.cursor.clearSelection()
         self.code.setExtraSelections([selection])
-#============= EOF =============================================
+
+# ============= EOF =============================================
 

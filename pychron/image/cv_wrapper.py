@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,16 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
-#============= standard library imports ========================
+# ============= enthought library imports =======================
+# ============= standard library imports ========================
 from collections import namedtuple
 
 from numpy import array, asarray, ndarray
 from scipy.ndimage.filters import laplace
 from numpy.lib.function_base import percentile
-from skimage.color.colorconv import gray2rgb, rgb2gray
 
 
 try:
@@ -33,16 +32,15 @@ try:
     from cv import ConvertImage, fromarray, LoadImage, Flip, \
         Resize, CreateImage, CvtColor, Scalar, CreateMat, Copy, GetSubRect, PolyLine, Split, \
         Merge, Laplace, ConvertScaleAbs, GetSize
-
     from cv import CV_CVTIMG_SWAP_RB, CV_8UC1, CV_BGR2GRAY, CV_GRAY2BGR, \
         CV_8UC3, CV_RGB, CV_16UC1, CV_32FC3, CV_CHAIN_APPROX_NONE, CV_RETR_EXTERNAL, \
         CV_AA, CV_16UC3, CV_16SC1
 except ImportError, e:
-    print e
+    print 'exception', e
     print 'OpenCV required'
 
 
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
 from pychron.core.geometry.centroid import calculate_centroid
 
 
@@ -117,7 +115,7 @@ def colorspace(src, cs=None):
     '''
 
     '''
-
+    from skimage.color.colorconv import gray2rgb
     if not isinstance(src, ndarray):
         src = asarray(src)
 
@@ -155,7 +153,7 @@ def colorspace(src, cs=None):
 
 def grayspace(src):
     if isinstance(src, ndarray):
-        from skimage.color.colorconv import is_gray
+        from skimage.color.colorconv import is_gray, rgb2gray
         if not is_gray(src):
             dst = rgb2gray(src)
         else:
@@ -240,9 +238,9 @@ def new_video_writer(path, fps, size):
     v = VideoWriter(path, fourcc, fps, size)
     return v
 
-#===============================================================================
+# ===============================================================================
 # image manipulation
-#===============================================================================
+# ===============================================================================
 def sharpen(src):
     src = asarray(src)
     w, h = get_size(src)
@@ -254,9 +252,9 @@ def sharpen(src):
                       (3, 3), 3)
     addWeighted(src, 1.5, im, -0.5, 0, im)
     return im
-#===============================================================================
+# ===============================================================================
 # drawing
-#===============================================================================
+# ===============================================================================
 _new_point = namedtuple('Point', 'x y')
 def new_point(x, y, tt=False):
     x, y = map(int, (x, y))
@@ -327,9 +325,9 @@ def draw_contour_list(src, contours, hierarchy, external_color=(0, 255, 255),
 
 def get_centroid(pts):
     return calculate_centroid(pts)
-#===============================================================================
+# ===============================================================================
 # segmentation
-#===============================================================================
+# ===============================================================================
 def contour(src):
 
 #    return None, None
@@ -403,4 +401,4 @@ def get_polygons(src,
         centroids.append(cent)
 
     return polygons, areas, min_enclose, centroids
-#============= EOF =============================================
+# ============= EOF =============================================

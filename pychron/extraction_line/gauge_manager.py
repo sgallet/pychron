@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,33 +12,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
 
-
-#=============enthought library imports=======================
-from traits.api import List, HasTraits, Str, Float
-from traitsui.api import View, Item, ListEditor, InstanceEditor, HGroup
-
-from pychron.managers.manager import Manager
+# =============enthought library imports=======================
+from traits.api import Int, Bool
+from traitsui.api import View, Item, ListEditor, InstanceEditor
+# ============= standard library imports ========================
 import time
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
+from pychron.managers.manager import Manager
 
-# class Gauge(HasTraits):
-#    name = Str
-#    pressure = Float
-#    def traits_view(self):
-#        v = View(HGroup(Item('name', show_label=False, style='readonly'),
-#                         Item('pressure', format_str='%0.2e', show_label=False, style='readonly')))
-#        return v
 
 class GaugeManager(Manager):
-#    gauges = List
-#    def finish_loading(self, *args, **kw):
-#        for di in self.devices:
-#            if hasattr(di, 'gauges'):
-#                self.gauges.extend(di.gauges)
+    use_update = Bool
+    update_period = Int
 
     def finish_loading(self, *args, **kw):
         width = int(250 / float(len(self.devices)))
@@ -46,18 +34,30 @@ class GaugeManager(Manager):
             if hasattr(k, 'gauges'):
                 for gi in k.gauges:
                     gi.width = width
-#        self.load_gauges()
-#        print 'load gm', args, kw
-#
-#        for k, v in self.traits().items():
-#            if 'gauge_controller' in k:
-#                print v
+                    # if gi.name in ('CG1', 'CG2'):
+                    #     gi.pressure = random.randint(1, 50) * 1e-2
+                    # else:
+                    #     gi.pressure = random.randint(1, 50) * 1e-8
+
     def get_pressure(self, controller, name):
         dev = next((di for di in self.devices if di.name == controller), None)
-        if dev is not None:
-            gauge = dev.get_gauge(name)
-            if gauge is not None:
-                return gauge.pressure
+        if dev is None:
+            self.warning('Failed getting pressure for {} {}. '
+                         'Not a valid controller'.format(controller, name))
+        else:
+            return dev.get_pressure(name)
+
+    def test_connection(self):
+        for di in self.devices:
+            if not di.test_connection():
+                self.debug('Failed connection to "{}" (display_name={})'.format(di.name, di.display_name))
+                return
+            else:
+                self.debug('Get pressures name={}, display_name={}, {}'.format(di.name,
+                                                                               di.display_name,
+                                                                               di.get_pressures(verbose=True)))
+        else:
+            return True
 
     def stop_scans(self):
         for k in self.devices:
@@ -65,32 +65,42 @@ class GaugeManager(Manager):
                 k.stop_scan()
 
     def start_scans(self):
+
         self.info('starting gauge scans')
         # stop scans first
         self.stop_scans()
 
+        # sp = self.scan_period*1000
+        sp = None
+        if self.use_update:
+            sp = self.update_period
+
+        sp = sp or None
         for k in self.devices:
             if k.is_scanable:
-                k.start_scan()
+
+                k.start_scan(sp)
                 # stagger starts to reduce collisions
                 time.sleep(0.25)
-#            if 'gauge_controller' in k:
-#                print v
-#                v.start_scan()
-# #
-    def traits_view(self):
 
-        v = View(Item('devices', style='custom',
-                      show_label=False,
-                      editor=ListEditor(mutable=False,
-                                        columns=len(self.devices),
-                                        style='custom',
-                                        editor=InstanceEditor(view='gauge_view'))),
-                 height=-100
-                 )
+    def traits_view(self):
+        if self.devices:
+            v = View(Item('devices', style='custom',
+                          show_label=False,
+                          editor=ListEditor(mutable=False,
+                                            columns=len(self.devices),
+                                            style='custom',
+                                            editor=InstanceEditor(view='gauge_view'))),
+                     height=-100)
+        else:
+            v =View()
         return v
-#    controllers = List(GaugeControllers)
+
+    def _get_simulation(self):
+        return any([dev.simulation for dev in self.devices])
+
 if __name__ == '__main__':
     g = GaugeManager()
-    g.configure_traits()
-#============= EOF =====================================
+    g.bootstrap()
+    # g.configure_traits()
+# ============= EOF =====================================

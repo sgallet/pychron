@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,13 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from traits.api import HasTraits, List, Property, Button, Float, Str, Bool
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 from pychron.core.helpers.isotope_utils import sort_isotopes
 from pychron.loggable import Loggable
 
@@ -29,7 +29,7 @@ class UValue(HasTraits):
     name = Str
     use = Bool
 
-    _orig_nominal_value=None
+    _orig_nominal_value = 0
     _orig_std_dev=None
 
     def _nominal_value_changed(self, old, new):
@@ -53,6 +53,13 @@ class BatchEditor(Loggable):
     db_sens_button = Button
     sens_value = Property(Float, depends_on='_sens_value')
     _sens_value = Float
+    save_sens = Bool
+
+    def clear_use(self):
+        for vi in self.values:
+            vi.use = False
+        for vi in self.blanks:
+            vi.use = False
 
     def populate(self, unks):
         keys = set([ki for ui in unks
@@ -70,7 +77,7 @@ class BatchEditor(Loggable):
 
         keys = set([iso.detector for ui in unks
                     for iso in ui.isotopes.itervalues()])
-
+        print keys
         keys = sort_isotopes(list(keys))
         ics = []
         for ki in keys:
@@ -88,9 +95,9 @@ class BatchEditor(Loggable):
 
         self.values = discs + ics
 
-    #===============================================================================
+    # ===============================================================================
     # property get/set
-    #===============================================================================
+    # ===============================================================================
     def _get_sens_value(self):
         return self._sens_value
 
@@ -109,14 +116,12 @@ class BatchEditor(Loggable):
 
     def _values_default(self):
         v = [
-            UValue(name='disc.'),
-        ]
+            UValue(name='disc.'), ]
         return v
 
     def _blanks_default(self):
         v = [
-            UValue(name='Ar40'),
-        ]
+            UValue(name='Ar40'), ]
         return v
 
-    #============= EOF =============================================
+    # ============= EOF =============================================

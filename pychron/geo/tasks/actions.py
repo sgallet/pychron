@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,21 +12,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from pyface.action.action import Action
 from pyface.tasks.action.task_action import TaskAction
-from traits.api import HasTraits
-from traitsui.api import View, Item
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
+
+class ExportStratCanvasAction(Action):
+    name = 'Export Strat Canvas...'
+    accelerator = 'Ctrl+.'
+    method = 'export_strat_canvas'
+
+    def perform(self, event):
+        app = event.task.window.application
+        task = app.get_task('pychron.geo', activate=False)
+        if hasattr(task, self.method):
+            getattr(task, self.method)()
 
 
 class ExportShapefileAction(TaskAction):
-    name='Export Shapefile...'
-    method='export_shapefile'
+    name = 'Export Shapefile...'
+    method = 'export_shapefile'
 
-#============= EOF =============================================
+# ============= EOF =============================================
 

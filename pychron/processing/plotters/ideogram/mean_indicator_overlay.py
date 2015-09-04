@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,16 +12,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from chaco.abstract_overlay import AbstractOverlay
 from chaco.plot_label import PlotLabel
 from chaco.scatterplot import render_markers
+from kiva.trait_defs.kiva_font_trait import KivaFont
 from traits.api import Color, Instance, Str, Float, Int, HasTraits, Any
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
+from traits.traits import Font
 from pychron.processing.plotters.point_move_tool import LabelMoveTool
 
 
@@ -121,13 +123,14 @@ class MeanIndicatorOverlay(AbstractOverlay, Movable):
     color = Color
     label = Instance(PlotLabel)
     text = Str
-
+    font = KivaFont('modern 15')
     x = Float
     error = Float
     nsigma = Int
 
     marker = Str('vertical')
     end_cap_length = Int(4)
+    label_tool = Any
 
     def clear(self):
         self.altered_screen_point = None
@@ -142,11 +145,20 @@ class MeanIndicatorOverlay(AbstractOverlay, Movable):
 
     def _text_changed(self):
         label = self.label
+
         if label is None:
-            label = XYPlotLabel(component=self.component, text=self.text)
+            label = XYPlotLabel(component=self.component,
+                                font=self.font,
+                                text=self.text,
+                                color=self.color,
+                                id='{}_label'.format(self.id))
             self.label = label
             self.overlays.append(label)
-            self.tools.append(LabelMoveTool(component=label))
+            tool = LabelMoveTool(component=label)
+            self.tools.append(tool)
+            self.label_tool = tool
+        else:
+            label.text = self.text
             #print self.label
 
     def _color_changed(self):
@@ -157,8 +169,9 @@ class MeanIndicatorOverlay(AbstractOverlay, Movable):
         #self._color=color
 
     def overlay(self, other_component, gc, view_bounds=None, mode="normal"):
+        if self.label:
+            self.label.font.face_name = ''
 
-        self.label.font.face_name=''
         with gc:
             oc = other_component
             gc.clip_to_rect(oc.x, oc.y, oc.x2, oc.y2)
@@ -179,7 +192,8 @@ class MeanIndicatorOverlay(AbstractOverlay, Movable):
 
             x, y = self.get_current_point()
 
-            e = self.error / 2.0 * max(1, self.nsigma)
+            # e = self.error / 2.0 * max(1, self.nsigma)
+            e = self.error * max(1, self.nsigma)
             p1, p2 = self.component.map_screen([(self.x - e, 0), (self.x + e, 0)])
 
             render_error_bar(gc, p1[0], p2[0], y,
@@ -227,4 +241,4 @@ class MeanIndicatorOverlay(AbstractOverlay, Movable):
         else:
             self.current_screen_point = (x, self.y)
 
-#============= EOF =============================================
+# ============= EOF =============================================

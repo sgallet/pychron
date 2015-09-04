@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,12 +12,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
-#============= standard library imports ========================
+# ============= enthought library imports =======================
+# ============= standard library imports ========================
 
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
+FITS = ['linear', 'parabolic', 'cubic']
+
+
+def natural_name_fit(f):
+    if isinstance(f, (str, unicode)):
+        return f
+    elif isinstance(f, int):
+        return FITS[max(0, f - 1)]
 
 
 def convert_fit(f):
@@ -27,7 +35,7 @@ def convert_fit(f):
 
     if isinstance(f, (str, unicode)):
         f = f.lower()
-        fits = ['linear', 'parabolic', 'cubic']
+
         if '_' in f:
 
             try:
@@ -36,14 +44,17 @@ def convert_fit(f):
             except ValueError:
                 return None, None
 
-        if f in fits:
-            f = fits.index(f) + 1
-        elif f.startswith('average'):
-            f = 'average'
-            if not err:
-                err = 'SEM' if 'sem' in f else 'SD'
-        elif f.startswith('weightedmean'):
-            f = 'weightedmean'
+        if f in FITS:
+            f = FITS.index(f) + 1
+        # elif f.startswith('average'):
+        #     f = 'average'
+        #     if not err:
+        #         err = 'SEM' if 'sem' in f else 'SD'
+        # elif f.startswith('weighted mean'):
+        #     f = 'weighted mean'
+        #     if not err:
+        #         err = 'SEM' if 'sem' in f else 'SD'
+        elif f in ('average','weighted mean'):
             if not err:
                 err = 'SEM' if 'sem' in f else 'SD'
         else:
@@ -52,5 +63,5 @@ def convert_fit(f):
     return f, err
 
 
-#============= EOF =============================================
+# ============= EOF =============================================
 

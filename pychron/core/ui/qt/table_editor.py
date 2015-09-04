@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,16 +12,39 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
-from traits.api import Event, Callable
+# ============= enthought library imports =======================
+from PySide.QtGui import QFont, QFontMetrics
+from traits.api import Event, Callable, Bool
 from traitsui.qt4.table_editor import TableView
 from traitsui.editors.table_editor import TableEditor
 from PySide.QtCore import Qt
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
+
+
 class myTableView(TableView):
+    clear_selection_on_dclicked = False
+
+    def __init__(self, *args, **kw):
+        super(myTableView, self).__init__(*args, **kw)
+
+        editor = self._editor
+        self.clear_selection_on_dclicked = editor.factory.clear_selection_on_dclicked
+        font = editor.factory.cell_font
+        if font is not None:
+            fnt = QFont(font)
+            size = QFontMetrics(fnt)
+
+            vheader = self.verticalHeader()
+            hheader = self.horizontalHeader()
+
+            vheader.setDefaultSectionSize(size.height() + 2)
+            #hheader.setStretchLastSection(editor.factory.stretch_last_section)
+
+            hheader.setFont(fnt)
+
     def keyPressEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
             self._editor.factory.command_key = True
@@ -32,13 +55,20 @@ class myTableView(TableView):
         self._editor.factory.command_key = False
         return TableView.keyReleaseEvent(self, *args, **kwargs)
 
+    def mouseDoubleClickEvent(self, QMouseEvent):
+        if self.clear_selection_on_dclicked:
+            self.clearSelection()
+
+
 class myTableEditor(TableEditor):
     table_view_factory = myTableView
     command_key = Event
     on_command_key = Callable
+    clear_selection_on_dclicked = Bool
+
     def _command_key_changed(self, new):
         if self.on_command_key:
             self.on_command_key(new)
 
 
-#============= EOF =============================================
+# ============= EOF =============================================

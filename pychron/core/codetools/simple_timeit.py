@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,16 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 import time
 
 
-def timethis(func, msg=None, log=None, args=None, kwargs=None, decorate='$'):
+def timethis(func, msg=None, log=None, args=None, kwargs=None, decorate='$', rettime=False):
     if args is None:
         args = tuple()
     if kwargs is None:
@@ -29,10 +29,16 @@ def timethis(func, msg=None, log=None, args=None, kwargs=None, decorate='$'):
 
     st = time.time()
     r = func(*args, **kwargs)
-    s = '{}s'.format(time.time() - st)
+    et = time.time() - st
+    s = '{:0.5f}s'.format(et)
 
-    if msg:
-        s = '{} {}'.format(msg, s)
+    if msg is None:
+        if hasattr(func, 'func_name'):
+            msg = func.func_name
+        else:
+            msg = ''
+    # if msg:
+    s = '{} {}'.format(msg, s)
     if decorate:
         s = '{} {}'.format(decorate * 20, s)
 
@@ -40,8 +46,10 @@ def timethis(func, msg=None, log=None, args=None, kwargs=None, decorate='$'):
         log(s)
     else:
         print 'timethis', s
-
+    if rettime:
+        return et
     return r
+
 
 # def timer(msg=None):
 #     def _timer(func):
@@ -77,4 +85,4 @@ class TimerCTX(object):
             s = '{} - {}'.format(s, msg)
         print s
 
-#============= EOF =============================================
+# ============= EOF =============================================

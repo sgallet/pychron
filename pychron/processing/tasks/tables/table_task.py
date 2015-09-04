@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,19 +12,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from itertools import groupby
+
 from traits.api import Instance
 from pyface.tasks.action.schema import SToolBar, SGroup
+
 # from pyface.action.action import Action
 # from pyface.tasks.action.task_action import TaskAction
 # from pyface.tasks.task_layout import TaskLayout, PaneItem
 # from pyface.timer.do_later import do_later
 # from pyface.tasks.action.schema import SToolBar
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 from pychron.processing.tasks.browser.browser_task import BaseBrowserTask
 from pychron.processing.tasks.tables.editors.base_adapter import TableSeparator
 from pychron.processing.tasks.tables.editors.step_heat.step_heat_table_editor import StepHeatTableEditor
@@ -108,18 +110,18 @@ class TableTask(BaseBrowserTask):
         return [tb1, tb2]
 
 
-    def activated(self):
+    # def activated(self):
         #editor = FusionTableEditor()
         #self._open_editor(editor)
         self.load_projects()
         #self.selected_project = self.projects[1]
 
-        editor = StepHeatTableEditor()
-        self._open_editor(editor)
+        # editor = StepHeatTableEditor()
+        # self._open_editor(editor)
 
 
-    # def _dclicked_sample_changed(self, new):
-    #     self._append_table()
+        # def _dclicked_sample_changed(self, new):
+        #     self._append_table()
         #         man = self.manager
         #         ans = [ai for ai in self.analyses
         # #                 if not ai.step
@@ -135,12 +137,12 @@ class TableTask(BaseBrowserTask):
 
         #self.active_editor.name = self.selected_samples[0].name
 
-    #===============================================================================
+    # ===============================================================================
     # task actions
-    #===============================================================================
-    #===========================================================================
+    # ===============================================================================
+    # ===========================================================================
     # output actions
-    #===========================================================================
+    # ===========================================================================
     def make_pdf_table(self):
         ae = self.active_editor
         ae.use_alternating_background = self.editor.use_alternating_background
@@ -171,9 +173,9 @@ class TableTask(BaseBrowserTask):
         p = ae.make_csv_table(title)
         self.view_csv(p)
 
-    #===========================================================================
+    # ===========================================================================
     #
-    #===========================================================================
+    # ===========================================================================
     def toggle_status(self):
         ae = self.active_editor
         if ae and ae.selected:
@@ -182,7 +184,7 @@ class TableTask(BaseBrowserTask):
 
     def append_summary_table(self):
         if isinstance(self.active_editor, SummaryTableEditor):
-        #             do_later(self._append_summary_table)
+            #             do_later(self._append_summary_table)
             self._append_summary_table()
 
     def append_table(self):
@@ -199,7 +201,7 @@ class TableTask(BaseBrowserTask):
 
         ss = [sa for sa in self.selected_samples if not find(sa.name)]
         man = self.manager
-        ans = self._get_sample_analyses(ss)
+        ans = self._retrieve_sample_analyses(ss)
         ans = man.make_analyses(ans)
 
         items = self.active_editor.items
@@ -251,7 +253,7 @@ class TableTask(BaseBrowserTask):
             if s.material:
                 mat = s.material
 
-            ans = self._get_sample_analyses(s)
+            ans = self._retrieve_sample_analyses(s)
             #             ans = [ai for ai in ans if ai.step == ''][:5]
             #             ans = [ai for ai in ans][:5]
             #            ans = self.manager.make_analyses(ans[:4])
@@ -293,9 +295,9 @@ class TableTask(BaseBrowserTask):
         ]
 
 
-    #===============================================================================
+    # ===============================================================================
     # handlers
-    #===============================================================================
+    # ===============================================================================
     @on_trait_change('editor:age_kind')
     def _edit_handler(self, obj, name, old, new):
         ae = self.active_editor
@@ -314,4 +316,4 @@ class TableTask(BaseBrowserTask):
                 self.editor.age_kinds = ref.age_kinds
 
 
-#============= EOF =============================================
+# ============= EOF =============================================

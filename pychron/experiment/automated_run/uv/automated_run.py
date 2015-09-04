@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2012 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,12 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from pychron.experiment.automated_run.automated_run import AutomatedRun
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 from pychron.pyscripts.uv_extraction_line_pyscript import UVExtractionPyScript
 
 
@@ -39,35 +39,35 @@ class UVAutomatedRun(AutomatedRun):
                              attenuator=self.spec.attenuator)
 
 
-    def _save_extraction(self, *args, **kw):
-        ext = super(UVAutomatedRun, self)._save_extraction(*args, **kw)
-        if self.spec.image:
-            dbim = self.db.get_image(self.image)
-            if dbim is None:
-                # use media server so only save path of file
-                # secondary option- open image and save to db
-                dbim = self.db.add_image(self.image,
-                                         #                                  image=self.image.tostring()
-                )
-
-            ext.image = dbim
-
-        # save snapshot recorded by pyscript
-        if self.extraction_script:
-            sps = self.extraction_script.snapshot_paths
-            if sps:
-                for sp in sps:
-                    dbsnap = self.db.add_snapshot(sp)
-                    ext.snapshots.append(dbsnap)
-
-        return ext
+    # def _save_extraction(self, *args, **kw):
+    #     ext = super(UVAutomatedRun, self)._save_extraction(*args, **kw)
+    #     if self.spec.image:
+    #         dbim = self.db.get_image(self.image)
+    #         if dbim is None:
+    #             # use media server so only save path of file
+    #             # secondary option- open image and save to db
+    #             dbim = self.db.add_image(self.image,
+    #                                      #                                  image=self.image.tostring()
+    #             )
+    #
+    #         ext.image = dbim
+    #
+    #     # save snapshot recorded by pyscript
+    #     if self.extraction_script:
+    #         sps = self.extraction_script.snapshot_paths
+    #         if sps:
+    #             for sp in sps:
+    #                 dbsnap = self.db.add_snapshot(sp)
+    #                 ext.snapshots.append(dbsnap)
+    #
+    #     return ext
 
     #    @cached_property
     #    def _get_masks(self):
     #        p = os.path.join(paths.device_dir, 'uv', 'masks.txt')
     #        masks = []
     #        if os.path.isfile(p):
-    #            with open(p, 'r') as fp:
+    #            with open(p, 'r') as rfile:
     #                for lin in fp:
     #                    lin = lin.strip()
     #                    if not lin or lin.startswith('#'):
@@ -105,9 +105,9 @@ class UVAutomatedRun(AutomatedRun):
 #            b.client = c
 #
 #        return b
-##===============================================================================
+## ===============================================================================
 # # handlers
-##===============================================================================
+## ===============================================================================
 #    def _browser_button_fired(self):
 #        browser = self._image_browser_factory()
 # #        browser.root='images/fusions_uv'
@@ -135,4 +135,4 @@ class UVAutomatedRun(AutomatedRun):
 #        self._extraction_script = self._load_script('extraction')
 #        return self._extraction_script
 
-#============= EOF =============================================
+# ============= EOF =============================================

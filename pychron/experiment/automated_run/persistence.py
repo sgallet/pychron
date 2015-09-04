@@ -1,105 +1,379 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2014 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
+
 from traits.api import Instance, Bool, Int, Float, Str, \
-    Dict, List, Time, Date, Any, Property
-#============= standard library imports ========================
+    Dict, List, Time, Date, Any, Long
+# ============= standard library imports ========================
+import binascii
 import os
 import struct
 import time
 import math
-#============= local library imports  ==========================
 from uncertainties import nominal_value, std_dev
-from pychron.core.codetools.file_log import file_log
-from pychron.core.codetools.memory_usage import mem_log
+# ============= local library imports  ==========================
+# from pychron.core.codetools.file_log import file_log
+# from pychron.core.codetools.memory_usage import mem_log
+from xlwt import Workbook
 from pychron.core.helpers.datetime_tools import get_datetime
 from pychron.core.ui.preference_binding import bind_preference
 from pychron.database.adapters.local_lab_adapter import LocalLabAdapter
-from pychron.experiment.automated_run.peak_hop_collector import parse_hops
-from pychron.experiment.datahub import Datahub
+from pychron.experiment.automated_run.hop_util import parse_hops
 
 from pychron.loggable import Loggable
-from pychron.managers.data_managers.h5_data_manager import H5DataManager
+# from pychron.managers.data_managers.h5_data_manager import H5DataManager
 from pychron.paths import paths
-from pychron.processing.export.export_spec import ExportSpec
+from pychron.processing.export.export_spec import MassSpecExportSpec
 from pychron.pychron_constants import NULL_STR
 
-DEBUG=False
+DEBUG = False
 
 
+class BasePersister(Loggable):
+    run_spec = Instance('pychron.experiment.automated_run.spec.AutomatedRunSpec')
+    monitor = Any
+    arar_age = Any
 
-class AutomatedRunPersister(Loggable):
-    # db = Instance(IsotopeAdapter)
-    local_lab_db = Instance(LocalLabAdapter)
-    # massspec_importer = Instance(MassSpecDatabaseImporter)
-    datahub=Instance(Datahub)
-    run_spec=Instance('pychron.experiment.automated_run.spec.AutomatedRunSpec')
-    data_manager = Instance(H5DataManager, ())
-    monitor=Any
-
-    default_outlier_filtering = Property(depends_on='filter_outliers, fo_+')
-    filter_outliers = Bool(False)
-    fo_iterations = Int(1)
-    fo_std_dev = Int(2)
+    auto_save_detector_ic = Bool
+    signal_fods = Dict
+    baseline_fods = Dict
 
     save_as_peak_hop = Bool(False)
     save_enabled = Bool(False)
-    experiment_identifier = Int
-    sensitivity_multiplier= Float
-    experiment_queue_name=Str
-    experiment_queue_blob=Str
+    experiment_identifier = Long
+    sensitivity_multiplier = Float
+    experiment_queue_name = Str
+    experiment_queue_blob = Str
 
     extraction_name = Str
     extraction_blob = Str
     measurement_name = Str
     measurement_blob = Str
-    positions=List
+    positions = List  # list of position names
+    extraction_positions = List  # list of x,y or x,y,z tuples
 
-    #for saving to mass spec
+    # for saving to mass spec
     runscript_name = Str
     runscript_blob = Str
 
-    spec_dict=Dict
-    defl_dict=Dict
-    active_detectors=List
+    spec_dict = Dict
+    defl_dict = Dict
+    gains = List
 
-    previous_blanks=Dict
-    secondary_database_fail=False
-    use_secondary_database=True
+    active_detectors = List
 
-    runid=Str
-    uuid=Str
-    rundate=Date
-    runtime=Time
-    load_name=Str
+    previous_blank_id = Long
+    previous_blanks = Dict
+    grouping_threshold = Float
+    grouping_suffix = Str
+
+    rundate = Date
+    runtime = Time
+    load_name = Str
 
     cdd_ic_factor = Any
 
-    _db_extraction_id=None
+    whiff_result = None
+
+    def pre_extraction_save(self):
+        """
+        set runtime and rundate
+        """
+        d = get_datetime()
+        self.runtime = d.time()
+        self.rundate = d.date()
+        self.info('Analysis started at {}'.format(self.runtime))
+        self._pre_extraction_save_hook()
+
+    def post_extraction_save(self, rblob, oblob, snapshots):
+        pass
+
+    def pre_measurement_save(self):
+        pass
+
+    def post_measurement_save(self):
+        pass
+
+    def save_peak_center_to_file(self):
+        pass
+
+    def _pre_extraction_save_hook(self):
+        pass
+
+
+def get_sheet(wb, name):
+    i = 0
+    while 1:
+        try:
+            sh = wb.get_sheet(i)
+            if sh.name == name:
+                return sh
+        except IndexError:
+            return
+        i += 1
+
+
+class ExcelPersister(BasePersister):
+    data_manager = Instance('pychron.managers.data_managers.xls_data_manager.XLSDataManager', ())
+
+    def post_extraction_save(self, rblob, oblob, snapshots):
+        """
+        save extraction blobs, loadtable, and snapshots to the primary db
+
+        :param rblob: response blob. binary time, value. time versus measured output
+        :param oblob: output blob. binary time, value. time versus requested output
+        :param snapshots: list of snapshot paths
+        """
+        if DEBUG:
+            self.debug('Not saving extraction to database')
+            return
+
+        self.info('post extraction save')
+        wb = self._workbook
+        sh = wb.add_sheet('Meta')
+
+        rs = self.run_spec
+        for i, (tag, attr) in enumerate((('User', 'username'),
+                                         ('AnalysisType', 'analysis_type'),
+                                         ('UUID', 'uud'))):
+            sh.write(i, 0, tag)
+            sh.write(i, 1, getattr(rs, attr))
+
+        sh.write(i+1, 0, 'Load')
+        sh.write(i+1, 1, self.load_name)
+
+    # def pre_measurement_save(self):
+    #     """
+    #     """
+    #     self.info('pre measurement save')
+
+    def post_measurement_save(self):
+        if DEBUG:
+            self.debug('Not measurement saving to xls')
+            return
+
+        self.info('post measurement save')
+        wb = self._workbook
+
+        path = os.path.join(paths.isotope_dir, '{}.xls'.format(self.run_spec.runid))
+        sh = wb.add_sheet('data')
+        self._save_isotopes(sh)
+        wb.save(path)
+
+    def _save_isotopes(self, sh):
+        for i,(k, iso) in enumerate(self.arar_age.isotopes.items()):
+
+            sh.write(0, i, '{} time'.format(k))
+            sh.write(0, i+1, '{} intensity'.format(k))
+
+            sh.write(0, i+2, '{} sniff time'.format(k))
+            sh.write(0, i+3, '{} sniff intensity'.format(k))
+            sh.write(0, i+4, '{} baseline time'.format(k))
+            sh.write(0, i+5, '{} baseline intensity'.format(k))
+
+            for j,x in enumerate(iso.xs):
+                sh.write(j+1,i, x)
+            for j,y in enumerate(iso.ys):
+                sh.write(j+1,i+1, y)
+
+            for j,x in enumerate(iso.sniff.xs):
+                sh.write(j+1,i+2, x)
+            for j,y in enumerate(iso.sniff.ys):
+                sh.write(j+1,i+3, y)
+
+            for j,x in enumerate(iso.baseline.xs):
+                sh.write(j+1,i+4, x)
+            for j,y in enumerate(iso.baseline.ys):
+                sh.write(j+1,i+5, y)
+
+    def save_peak_center_to_file(self, pc):
+        wb = self._workbook
+        sh = wb.add_sheet('PeakCenter')
+        xs, ys = pc.graph.get_data(), pc.graph.get_data(axis=1)
+        sh.write(0, 0, 'DAC (V)')
+        sh.write(0, 1, 'Intensity (fA)')
+
+        for i, xi in enumerate(xs):
+            sh.write(i + 1, 0, xi)
+
+        for i, yi in enumerate(ys):
+            sh.write(i + 1, 1, yi)
+
+        xs, ys, _mx, _my = pc.result
+        sh.write(0, 3, 'DAC')
+        sh.write(0, 4, 'Intensity')
+        sh.write(1, 2, 'Low')
+        sh.write(2, 2, 'Center')
+        sh.write(3, 2, 'High')
+        for i, xi in enumerate(xs):
+            sh.write(i, 3, xi)
+        for i, yi in enumerate(ys):
+            sh.write(i, 4, yi)
+
+    def _pre_extraction_save_hook(self):
+        self._workbook = Workbook()
+
+
+class AutomatedRunPersister(BasePersister):
+    """
+    Save automated run data to file and database(s)
+
+    #. save meta data to the local_lab database. This keeps are local record of all analyses run on the local system
+    #. save data to an HDF5 file using a ``H5DataManager``
+    #. use the ``Datahub`` to save data to databases
+
+    """
+    local_lab_db = Instance(LocalLabAdapter)
+    datahub = Instance('pychron.experiment.datahub.Datahub')
+
+    data_manager = Instance('pychron.managers.data_managers.h5_data_manager.H5DataManager', ())
+
+    secondary_database_fail = False
+    use_secondary_database = True
+    use_analysis_grouping = Bool(False)
+
+    _db_extraction_id = None
+    _temp_analysis_buffer = None
+    _current_data_frame = None
 
     def __init__(self, *args, **kw):
         super(AutomatedRunPersister, self).__init__(*args, **kw)
         self.bind_preferences()
+        self._temp_analysis_buffer = []
 
     def bind_preferences(self):
+        """
+        bind to application preferences
+        """
         prefid = 'pychron.experiment'
-        bind_preference(self, 'filter_outliers', '{}.filter_outliers'.format(prefid))
-        bind_preference(self, 'fo_iterations', '{}.fo_iterations'.format(prefid))
-        bind_preference(self, 'fo_std_dev', '{}.fo_std_dev'.format(prefid))
+        bind_preference(self, 'use_analysis_grouping', '{}.use_analysis_grouping'.format(prefid))
+        bind_preference(self, 'grouping_threshold', '{}.grouping_threshold'.format(prefid))
+        bind_preference(self, 'grouping_suffix', '{}.grouping_suffix'.format(prefid))
+
+    # ===============================================================================
+    # data writing
+    # ===============================================================================
+    def save_peak_center_to_file(self, pc):
+        """
+        save a peak center to file
+
+        :param pc: ``PeakCenter``
+        """
+        dm = self.data_manager
+        with dm.open_file(self._current_data_frame):
+            tab = dm.new_table('/', 'peak_center')
+            xs, ys = pc.graph.get_data(), pc.graph.get_data(axis=1)
+
+            for xi, yi in zip(xs, ys):
+                nrow = tab.row
+                nrow['time'] = xi
+                nrow['value'] = yi
+                nrow.append()
+
+            xs, ys, _mx, _my = pc.result
+            attrs = tab.attrs
+            attrs.low_dac = xs[0]
+            attrs.center_dac = xs[1]
+            attrs.high_dac = xs[2]
+
+            attrs.low_signal = ys[0]
+            attrs.center_signal = ys[1]
+            attrs.high_signal = ys[2]
+            tab.flush()
+
+    def get_data_writer(self, grpname):
+        """
+        grpname should be a str such as "signal", "baseline",etc
+        return a closure for writing the data
+
+        :param grpname: str
+        :return: function
+        """
+
+        def write_data(dets, x, keys, signals):
+            # todo: test whether saving data to h5 in real time is expansive
+            # self.unique_warning('NOT Writing data to H5 in real time')
+            # return
+
+            dm = self.data_manager
+            for det in dets:
+                k = det.name
+                try:
+                    if k in keys:
+                        if grpname == 'baseline':
+                            grp = '/{}'.format(grpname)
+                        else:
+                            grp = '/{}/{}'.format(grpname, det.isotope)
+                        # self.debug('get table {} /{}/{}'.format(k,grpname, det.isotope))
+                        # self.debug('get table {}/{}'.format(grp,k))
+                        t = dm.get_table(k, grp)
+
+                        nrow = t.row
+                        nrow['time'] = x
+                        nrow['value'] = signals[keys.index(k)]
+                        nrow.append()
+                        t.flush()
+                except AttributeError, e:
+                    self.debug('error: {} group:{} det:{} iso:{}'.format(e, grpname, k, det.isotope))
+
+        return write_data
+
+    def build_tables(self, grpname, detectors):
+        """
+        construct the hdf5 table structure
+
+        :param grpname: str
+        :param detectors: list
+        """
+
+        self.debug('build tables- {} {}'.format(grpname, detectors))
+        dm = self.data_manager
+        with dm.open_file(self._current_data_frame):
+            dm.new_group(grpname)
+            for i, d in enumerate(detectors):
+                iso = d.isotope
+                name = d.name
+                if grpname == 'baseline':
+                    dm.new_table('/{}'.format(grpname), name)
+                    self.debug('add group {} table {}'.format(grpname, name))
+                else:
+                    isogrp = dm.new_group(iso, parent='/{}'.format(grpname))
+                    dm.new_table(isogrp, name)
+                    self.debug('add group {} table {}'.format(isogrp, name))
+
+    def build_peak_hop_tables(self, grpname, hops):
+        """
+        construct the table structure for a peak hop
+        hops needs to be a str parsable by ``parse_hops``
+
+        :param grpname: str
+        :param hops: str
+        """
+        dm = self.data_manager
+
+        with dm.open_file(self._current_data_frame):
+            dm.new_group(grpname)
+
+            for iso, det, is_baseline in parse_hops(hops, ret='iso,det,is_baseline'):
+                if is_baseline:
+                    continue
+                isogrp = dm.new_group(iso, parent='/{}'.format(grpname))
+                dm.new_table(isogrp, det)
+                self.debug('add group {} table {}'.format(isogrp, det))
 
     def get_last_aliquot(self, identifier):
         return self.datahub.get_greatest_aliquot(identifier)
@@ -107,16 +381,27 @@ class AutomatedRunPersister(Loggable):
     def writer_ctx(self):
         return self.data_manager.open_file(self._current_data_frame)
 
-    def pre_extraction_save(self):
-        d = get_datetime()
-        self.runtime = d.time()
-        self.rundate = d.date()
-        self.info('Analysis started at {}'.format(self.runtime))
+    # def pre_extraction_save(self):
+    #     """
+    #     set runtime and rundate
+    #     """
+    #     d = get_datetime()
+    #     self.runtime = d.time()
+    #     self.rundate = d.date()
+    #     self.info('Analysis started at {}'.format(self.runtime))
 
-    def post_extraction_save(self):
+    def post_extraction_save(self, rblob, oblob, snapshots):
+        """
+        save extraction blobs, loadtable, and snapshots to the primary db
+
+        :param rblob: response blob. binary time, value. time versus measured output
+        :param oblob: output blob. binary time, value. time versus requested output
+        :param snapshots: list of snapshot paths
+        """
         if DEBUG:
             self.debug('Not saving extraction to database')
             return
+        self.info('post extraction save')
 
         db = self.datahub.mainstore.db
         if db:
@@ -124,22 +409,27 @@ class AutomatedRunPersister(Loggable):
                 loadtable = db.get_loadtable(self.load_name)
                 if loadtable is None:
                     loadtable = db.add_load(self.load_name)
-                    #             db.flush()
 
-                ext = self._save_extraction(db, loadtable=loadtable)
+                ext = self._save_extraction(db, loadtable=loadtable,
+                                            response_blob=rblob,
+                                            output_blob=oblob,
+                                            snapshots=snapshots)
                 sess.commit()
                 self._db_extraction_id = int(ext.id)
         else:
             self.debug('No database instance')
 
     def pre_measurement_save(self):
+        """
+        setup hdf5 file
+        """
         self.info('pre measurement save')
+
         dm = self.data_manager
         # make a new frame for saving data
 
         name = self.uuid
         path = os.path.join(paths.isotope_dir, '{}.h5'.format(name))
-        #        path = '/Users/ross/Sandbox/aaaa_multicollect_isotope.h5'
 
         self._current_data_frame = path
         frame = dm.new_frame(path)
@@ -150,39 +440,26 @@ class AutomatedRunPersister(Loggable):
 
         dm.close_file()
 
-    def _local_db_save(self):
-        ldb = self._local_lab_db_factory()
-        with ldb.session_ctx():
-            ln = self.run_spec.labnumber
-            aliquot = self.run_spec.aliquot
-            step = self.run_spec.step
-            uuid = self.uuid
-            cp = self._current_data_frame
-
-            ldb.add_analysis(labnumber=ln,
-                             aliquot=aliquot,
-                             uuid=uuid,
-                             step=step,
-                             collection_path=cp,
-                             )
-            #ldb.commit()
-            #ldb.close()
-            #del ldb
-
     def post_measurement_save(self):
+        """
+        check for runid conflicts. automatically update runid if conflict
+
+        #. save to primary database (aka mainstore)
+        #. save detector_ic to csv if applicable
+        #. save to secondary database
+        """
         if DEBUG:
             self.debug('Not measurement saving to database')
             return
 
         self.info('post measurement save')
-        #         mem_log('pre post measurement save')
         if not self.save_enabled:
             self.info('Database saving disabled')
             return
 
-        #check for conflicts immediately before saving
-        #automatically update if there is an issue
-        conflict=self.datahub.is_conflict(self.run_spec)
+        # check for conflicts immediately before saving
+        # automatically update if there is an issue
+        conflict = self.datahub.is_conflict(self.run_spec)
         if conflict:
             self.debug('post measurement datastore conflict found. Automatically updating the aliquot and step')
             self.datahub.update_spec(self.run_spec)
@@ -197,7 +474,6 @@ class AutomatedRunPersister(Loggable):
 
         # save to a database
         db = self.datahub.mainstore.db
-        #         if db and db.connect(force=True):
         if not db or not db.connected:
             self.warning('No database instanc. Not saving post measurement to primary database')
         else:
@@ -215,6 +491,10 @@ class AutomatedRunPersister(Loggable):
                     self.debug('user= {} does not existing. adding to database now'.format(un))
                     dbuser = db.add_user(un)
 
+                self.debug('adding analysis identifier={}, aliquot={}, '
+                           'step={}, increment={}'.format(ln, aliquot,
+                                                          self.run_spec.step,
+                                                          self.run_spec.increment))
                 a = db.add_analysis(lab,
                                     user=dbuser,
                                     uuid=self.uuid,
@@ -222,8 +502,12 @@ class AutomatedRunPersister(Loggable):
                                     aliquot=aliquot,
                                     step=self.run_spec.step,
                                     increment=self.run_spec.increment,
-                                    comment=self.run_spec.comment)
+                                    comment=self.run_spec.comment,
+                                    whiff_result=self.whiff_result)
                 sess.flush()
+                self.run_spec.analysis_dbid = a.id
+                self.run_spec.analysis_timestamp = a.analysis_timestamp
+
                 experiment = db.get_experiment(self.experiment_identifier, key='id')
                 if experiment is not None:
                     # added analysis to experiment
@@ -252,7 +536,7 @@ class AutomatedRunPersister(Loggable):
                 self._save_isotope_data(db, a)
 
                 # save ic factor
-                self._save_detector_intercalibration(db,a)
+                self._save_detector_intercalibration(db, a)
 
                 # save blanks
                 self._save_blank_info(db, a)
@@ -263,30 +547,127 @@ class AutomatedRunPersister(Loggable):
                 # save monitor
                 self._save_monitor_info(db, a)
 
-                mem_log('post pychron save')
+                # save gains
+                self._save_gains(db, a)
+
+                if self.use_analysis_grouping:
+                    self._save_analysis_group(db, a)
+
+                # mem_log('post pychron save')
 
                 pt = time.time() - pt
                 self.debug('pychron save time= {:0.3f} '.format(pt))
-                file_log(pt)
+                # file_log(pt)
 
+        self.debug('$$$$$$$$$$$$$$$ auto_save_detector_ic={}'.format(self.auto_save_detector_ic))
+        if self.auto_save_detector_ic:
+            try:
+                self._save_detector_ic_csv()
+            except BaseException, e:
+                self.debug('Failed auto saving detector ic. {}'.format(e))
+
+        # don't save detector_ic runs to mass spec
+        # measurement of an isotope on multiple detectors likely possible with mass spec but at this point
+        # not worth trying.
         if self.use_secondary_database:
-            if not self.datahub.secondary_connect():
-            # if not self.massspec_importer or not self.massspec_importer.db.connected:
-                self.debug('Secondary database is not available')
+            from pychron.experiment.datahub import check_secondary_database_save
+
+            if check_secondary_database_save(ln):
+                if not self.datahub.secondary_connect():
+                    # if not self.massspec_importer or not self.massspec_importer.db.connected:
+                    self.debug('Secondary database is not available')
+                else:
+                    self.debug('saving post measurement to secondary database')
+                    # save to massspec
+                    mt = time.time()
+                    self._save_to_massspec(cp)
+                    self.debug('mass spec save time= {:0.3f}'.format(time.time() - mt))
+                    # mem_log('post mass spec save')
+
+    # private
+    def _save_detector_ic_csv(self):
+
+        from pychron.experiment.utilities.detector_ic import make_items, save_csv
+        from pychron.experiment.utilities.identifier import get_analysis_type
+
+        if get_analysis_type(self.run_spec.identifier) == 'detector_ic':
+            items = make_items(self.arar_age.isotopes)
+
+            save_csv(self.run_spec.record_id, items)
+
+    def _save_gains(self, db, analysis):
+        self.debug('saving gains')
+        ha = db.make_gains_hash(self.gains)
+        dbhist = db.get_gain_history(ha)
+        if not dbhist:
+            dbhist = db.add_gain_history(ha, save_type='arun')
+            for d, v in self.gains:
+                db.add_gain(d, v, dbhist)
+            db.commit()
+
+        analysis.gain_history_id = dbhist.id
+
+    def _save_analysis_group(self, db, analysis):
+        """
+            if analysis is an unknown add to project's analysis_group
+            if analysis_group does not exist make it
+
+            if project is reference then find and associate with the unknown's project
+            if the next analysis is not from the same project then need to associate this analysis
+            with that project as well.
+        """
+        self.debug('save analysis_group')
+        rs = self.run_spec
+        prj = rs.project
+        if prj == 'references':
+            # get the most recent unknown analysis
+            lan = db.get_last_analysis(spectrometer=rs.mass_spectrometer,
+                                       analysis_type=rs.analysis_type,
+                                       hours_limit=self.grouping_threshold)
+            if lan is not None:
+                try:
+                    # prj = lan.labnumber.sample.project.name
+                    prj = lan.project_name
+                    self._add_to_project_group(db, prj, analysis)
+
+                    # add this analysis to a temporary buffer. this is used when a following
+                    # analysis is associated with a different project
+                    self._temp_analysis_buffer.append((prj, analysis.uuid))
+
+                except AttributeError:
+                    pass
             else:
-                self.debug('saving post measurement to secondary database')
-                # save to massspec
-                mt = time.time()
-                self._save_to_massspec(cp)
-                self.debug('mass spec save time= {:0.3f}'.format(time.time() - mt))
-                mem_log('post mass spec save')
+                # this maybe the first reference in the queue, so it should be associated with
+                # the first subsequent unknown.
+                self._temp_analysis_buffer.append((None, analysis.uuid))
 
-        #clear is_peak hop flag
-        # self.is_peak_hop = False
-        # self.plot_panel.is_peak_hop = False
-        # return True
+        else:
+            self._add_to_project_group(db, prj, analysis)
 
-    def _save_isotope_data(self,db, analysis):
+            if self._temp_analysis_buffer:
+                for p, uuid in self._temp_analysis_buffer:
+                    if p != prj:
+                        analysis = db.get_analysis_uuid(uuid)
+                        self._add_to_project_group(db, prj, analysis)
+
+            self._temp_analysis_buffer = []
+
+    def _add_to_project_group(self, db, prj, analysis):
+        if self.grouping_suffix:
+            prj = '{}-{}'.format(prj, self.grouping_suffix)
+
+        ag = db.get_analysis_group(prj, key='name')
+        if ag is None:
+            ag = db.add_analysis_group(prj)
+
+        # modify ag's id to reflect addition of another analysis
+        aa = ag.analyses[:]
+        aa.append(analysis)
+        ag.id = binascii.crc32(''.join([ai.uuid for ai in aa]))
+
+        db.add_analysis_group_set(ag, analysis)
+
+    def _save_isotope_data(self, db, analysis):
         self.debug('saving isotopes')
 
         dbhist = db.add_fit_history(analysis,
@@ -303,26 +684,42 @@ class AutomatedRunPersister(Loggable):
             self._save_signal_data(db, dbhist, analysis, dbdet, iso, iso, 'signal')
             self._save_signal_data(db, dbhist, analysis, dbdet, iso, iso.baseline, 'baseline')
 
-    def _save_signal_data(self,db,  dbhist, analysis, dbdet, iso, m, kind):
+    def _get_filter_outlier_dict(self, iso, kind):
+        if kind == 'baseline':
+            fods = self.baseline_fods
+            key = iso.detector
+        else:
+            fods = self.signal_fods
+            key = iso.name
+
+        try:
+            fod = fods[key]
+        except KeyError:
+            fod = {'filter_outliers': False, 'iterations': 1, 'std_devs': 2}
+        return fod
+
+    def _save_signal_data(self, db, dbhist, analysis, dbdet, iso, m, kind):
+        if not (len(m.xs) and len(m.ys)):
+            self.debug('no data for {} {}'.format(iso.name, kind))
+            return
 
         self.debug('saving data {} {} xs={}'.format(iso.name, kind, len(m.xs)))
-
         dbiso = db.add_isotope(analysis, iso.name, dbdet, kind=kind)
-
         data = ''.join([struct.pack('>ff', x, y) for x, y in zip(m.xs, m.ys)])
         db.add_signal(dbiso, data)
 
         add_result = kind in ('baseline', 'signal')
 
-        # filter_outliers=dict(iterations=1,
-        #                      std_dev=2, filter_outliers=True)
-        filter_outliers = self.default_outlier_filtering
         if add_result:
+            fod = self._get_filter_outlier_dict(iso, kind)
+            m.set_filtering(fod)
             if m.fit:
                 # add fit
-                db.add_fit(dbhist, dbiso, fit=m.fit)
-
-            m.set_filtering(filter_outliers)
+                db.add_fit(dbhist, dbiso,
+                           fit=m.fit,
+                           filter_outliers=fod.get('filter_outliers', False),
+                           filter_outlier_iterations=fod.get('iterations', 1),
+                           filter_outlier_std_devs=fod.get('std_devs', 2))
 
             # add isotope result
             # print 'a',m.value, m.error, type(m.error), type(nan)
@@ -344,7 +741,7 @@ class AutomatedRunPersister(Loggable):
             if sens:
                 extraction.sensitivity = sens[-1]
 
-    def _save_peak_center(self,db, analysis, cp):
+    def _save_peak_center(self, db, analysis, cp):
         self.info('saving peakcenter')
 
         dm = self.data_manager
@@ -359,20 +756,25 @@ class AutomatedRunPersister(Loggable):
                     points=points)
                 return pc
 
-    def _save_measurement(self, db,analysis):
+    def _save_measurement(self, db, analysis):
         self.info('saving measurement')
 
         meas = db.add_measurement(
             analysis,
             self.run_spec.analysis_type,
-            self.run_spec.mass_spectrometer)
+            self.run_spec.mass_spectrometer,
+            time_zero_offset=self.run_spec.collection_time_zero_offset)
         script = db.add_script(self.measurement_name, self.measurement_blob)
 
         meas.script_id = script.id
 
         return meas
 
-    def _save_extraction(self,db, analysis=None, loadtable=None):
+    def _save_extraction(self, db, analysis=None, loadtable=None,
+                         output_blob=None, response_blob=None, snapshots=None):
+        """
+            snapshots: list of tuples, (local_path, remote_path, imageblob)
+        """
         self.info('saving extraction')
 
         spec = self.run_spec
@@ -384,6 +786,8 @@ class AutomatedRunPersister(Loggable):
                  extract_duration=spec.duration,
                  cleanup_duration=spec.cleanup,
                  weight=spec.weight,
+                 response_blob=response_blob or '',
+                 output_blob=output_blob or '',
                  sensitivity_multiplier=self.sensitivity_multiplier,
                  is_degas=spec.labnumber == 'dg')
 
@@ -401,21 +805,34 @@ class AutomatedRunPersister(Loggable):
                                    self.extraction_blob)
             ext.script_id = script.id
 
-        for pi in self.positions:
-            if isinstance(pi, tuple):
-                if len(pi) > 1:
+        for i, pp in enumerate(self.positions):
+            if isinstance(pp, tuple):
+                if len(pp) > 1:
 
-                    if len(pi) == 3:
-                        dbpos = db.add_analysis_position(ext, x=pi[0], y=pi[1], z=pi[2])
+                    if len(pp) == 3:
+                        dbpos = db.add_analysis_position(ext, x=pp[0], y=pp[1], z=pp[2])
                     else:
-                        dbpos = db.add_analysis_position(ext, x=pi[0], y=pi[1])
+                        dbpos = db.add_analysis_position(ext, x=pp[0], y=pp[1])
 
             else:
-                dbpos = db.add_analysis_position(ext, pi)
+                dbpos = db.add_analysis_position(ext, pp)
+                try:
+                    ep = self.extraction_positions[i]
+                    dbpos.x = ep[0]
+                    dbpos.y = ep[1]
+                    if len(ep) == 3:
+                        dbpos.z = ep[2]
+                except IndexError:
+                    self.debug('no extraction position for {}'.format(pp))
 
             if loadtable and dbpos:
                 dbpos.load_identifier = loadtable.name
 
+        if snapshots:
+            for lpath, rpath, image in snapshots:
+                dbsnap = self.db.add_snapshot(lpath, remote_path=rpath,
+                                              image=image)
+                ext.snapshots.append(dbsnap)
         return ext
 
     def _save_spectrometer_info(self, db, meas):
@@ -427,7 +844,7 @@ class AutomatedRunPersister(Loggable):
                 det = db.add_detector(det)
                 db.add_deflection(meas, det, deflection)
 
-    def _save_detector_intercalibration(self,db, analysis):
+    def _save_detector_intercalibration(self, db, analysis):
         self.info('saving detector intercalibration')
         if self.arar_age:
             history = None
@@ -443,7 +860,7 @@ class AutomatedRunPersister(Loggable):
                 user = self.run_spec.username
                 user = user if user else NULL_STR
 
-                self.info('{} adding detector intercalibration history for {}'.format(user, self.runid))
+                self.info('{} adding detector intercalibration history for {}'.format(user, self.run_spec.runid))
 
                 if history is None:
                     history = db.add_detector_intercalibration_history(analysis,
@@ -457,11 +874,14 @@ class AutomatedRunPersister(Loggable):
 
     def _save_blank_info(self, db, analysis):
         self.info('saving blank info')
-        self._save_history_info(db, analysis, 'blanks', self.previous_blanks)
+        self.debug('preceding blank id={}'.format(self.previous_blank_id))
 
-    def _save_history_info(self, db, analysis, name, values):
+        self._save_history_info(db, analysis, 'blanks', self.previous_blanks,
+                                preceding_id=self.previous_blank_id)
+
+    def _save_history_info(self, db, analysis, name, values, preceding_id=None):
         if not values:
-            self.debug('no previous {} to save {}'.format(name,values))
+            self.debug('no previous {} to save {}'.format(name, values))
             return
         if self.run_spec.analysis_type.startswith('blank') or \
                 self.run_spec.analysis_type.startswith('background'):
@@ -483,8 +903,12 @@ class AutomatedRunPersister(Loggable):
         for isotope, v in values.iteritems():
             uv = v.nominal_value
             ue = float(v.std_dev)
-            func(history, user_value=uv, user_error=ue,
-                 isotope=isotope)
+            if preceding_id:
+                func(history, user_value=uv, user_error=ue,
+                     isotope=isotope, preceding_id=preceding_id)
+            else:
+                func(history, user_value=uv, user_error=ue,
+                     isotope=isotope)
 
     def _save_monitor_info(self, db, analysis):
         if self.monitor:
@@ -500,8 +924,8 @@ class AutomatedRunPersister(Loggable):
                 db.add_monitor(analysis, **params)
 
     def _save_to_massspec(self, p):
-        #dm = self.data_manager
-        ms=self.datahub.secondarystore
+        # dm = self.data_manager
+        ms = self.datahub.secondarystore
         h = ms.db.host
         dn = ms.db.name
         self.info('saving to massspec database {}/{}'.format(h, dn))
@@ -511,14 +935,14 @@ class AutomatedRunPersister(Loggable):
         if ms.add_analysis(exp):
             self.info('analysis added to mass spec database')
         else:
-            self.secondary_database_fail='Could not save {} to Mass Spec database'.format(self.runid)
+            self.secondary_database_fail = 'Could not save {} to Mass Spec database'.format(self.run_spec.runid)
 
     def _export_spec_factory(self):
         # dc = self.collector
         # fb = dc.get_fit_block(-1, self.fits)
 
         # rs_name, rs_text = self._assemble_script_blob()
-        rid = self.runid
+        rid = self.run_spec.runid
 
         # blanks = self.get_previous_blanks()
 
@@ -526,21 +950,21 @@ class AutomatedRunPersister(Loggable):
         # sf = dict(zip(dkeys, fb))
         # p = self._current_data_frame
 
-        ic=self.arar_age.get_ic_factor('CDD')
+        ic = self.arar_age.get_ic_factor('CDD')
 
-        exp = ExportSpec(runid=rid,
-                         runscript_name=self.runscript_name,
-                         runscript_text=self.runscript_blob,
-                         # signal_fits=sf,
-                         mass_spectrometer=self.run_spec.mass_spectrometer.capitalize(),
-                         # blanks=blanks,
-                         # data_path=p,
-                         isotopes=self.arar_age.isotopes,
-                         # signal_intercepts=si,
-                         # signal_intercepts=self._processed_signals_dict,
-                         is_peak_hop=self.save_as_peak_hop,
-                         ic_factor_v=float(nominal_value(ic)),
-                         ic_factor_e=float(std_dev(ic)))
+        exp = MassSpecExportSpec(runid=rid,
+                                 runscript_name=self.runscript_name,
+                                 runscript_text=self.runscript_blob,
+                                 # signal_fits=sf,
+                                 mass_spectrometer=self.run_spec.mass_spectrometer.capitalize(),
+                                 # blanks=blanks,
+                                 # data_path=p,
+                                 isotopes=self.arar_age.isotopes,
+                                 # signal_intercepts=si,
+                                 # signal_intercepts=self._processed_signals_dict,
+                                 is_peak_hop=self.save_as_peak_hop,
+                                 ic_factor_v=float(nominal_value(ic)),
+                                 ic_factor_e=float(std_dev(ic)))
         exp.load_record(self.run_spec)
 
         return exp
@@ -548,56 +972,10 @@ class AutomatedRunPersister(Loggable):
     def _assemble_extraction_parameters(self, edict):
         spec = self.run_spec
 
-        edict.update(beam_diameter=spec.beam_diameter,
+        edict.update(beam_diameter=spec.beam_diameter or 0,
                      pattern=spec.pattern,
-                     ramp_duration=spec.ramp_duration,
-                     ramp_rate=spec.ramp_rate)
-
-    #===============================================================================
-    # data writing
-    #===============================================================================
-    def save_peak_center_to_file(self, pc):
-        dm=self.data_manager
-        with dm.open_file(self._current_data_frame):
-            tab = dm.new_table('/', 'peak_center')
-            xs, ys = pc.graph.get_data(), pc.graph.get_data(axis=1)
-
-            for xi, yi in zip(xs, ys):
-                nrow = tab.row
-                nrow['time'] = xi
-                nrow['value'] = yi
-                nrow.append()
-
-            xs, ys, _mx, _my = pc.result
-            attrs = tab.attrs
-            attrs.low_dac = xs[0]
-            attrs.center_dac = xs[1]
-            attrs.high_dac = xs[2]
-
-            attrs.low_signal = ys[0]
-            attrs.center_signal = ys[1]
-            attrs.high_signal = ys[2]
-            tab.flush()
-
-    def get_data_writer(self, grpname):
-        def write_data(dets, x, keys, signals):
-            dm = self.data_manager
-            for det in dets:
-                k = det.name
-                try:
-                    if k in keys:
-                        #self.debug('get table {} /{}/{}'.format(k,grpname, det.isotope))
-                        t = dm.get_table(k, '/{}/{}'.format(grpname, det.isotope))
-                        nrow = t.row
-                        #                        self.debug('x={}'.format(x))
-                        nrow['time'] = x
-                        nrow['value'] = signals[keys.index(k)]
-                        nrow.append()
-                        t.flush()
-                except AttributeError, e:
-                    self.debug('error: {} group:{} det:{} iso:{}'.format(e, grpname, k, det.isotope))
-
-        return write_data
+                     ramp_duration=spec.ramp_duration or 0,
+                     ramp_rate=spec.ramp_rate or 0)
 
     def _set_table_attr(self, name, grp, attr, value):
         dm = self.data_manager
@@ -605,30 +983,23 @@ class AutomatedRunPersister(Loggable):
         setattr(tab.attrs, attr, value)
         tab.flush()
 
-    def build_tables(self, gn, detectors):
-        dm = self.data_manager
+    def _local_db_save(self):
+        ldb = self._local_lab_db_factory()
+        with ldb.session_ctx():
+            ln = self.run_spec.labnumber
+            aliquot = self.run_spec.aliquot
+            step = self.run_spec.step
+            uuid = self.uuid
+            cp = self._current_data_frame
 
-        with dm.open_file(self._current_data_frame):
-            dm.new_group(gn)
-            for i, d in enumerate(detectors):
-                iso = d.isotope
-                name = d.name
-                # self._save_isotopes.append((iso, name, gn))
-
-                isogrp = dm.new_group(iso, parent='/{}'.format(gn))
-                dm.new_table(isogrp, name)
-
-    def build_peak_hop_tables(self, gn, hops):
-        dm = self.data_manager
-
-        with dm.open_file(self._current_data_frame):
-            dm.new_group(gn)
-
-            for iso, det in parse_hops(hops, ret='iso,det'):
-                # self._save_isotopes.append((iso, det, gn))
-                isogrp = dm.new_group(iso, parent='/{}'.format(gn))
-                _t = dm.new_table(isogrp, det)
-                self.debug('add group {} table {}'.format(iso, det))
+            ldb.add_analysis(labnumber=ln,
+                             aliquot=aliquot,
+                             uuid=uuid,
+                             step=step,
+                             collection_path=cp)
+            # ldb.commit()
+            # ldb.close()
+            # del ldb
 
     def _local_lab_db_factory(self):
         if self.local_lab_db:
@@ -640,9 +1011,9 @@ class AutomatedRunPersister(Loggable):
         ldb.build_database()
         return ldb
 
-    def _get_default_outlier_filtering(self):
-        return dict(filter_outliers=self.filter_outliers, iterations=self.fo_iterations,
-                    std_dev=self.fo_std_dev)
+        # def _get_default_outlier_filtering(self):
+        # return dict(filter_outliers=self.filter_outliers, iterations=self.fo_iterations,
+        # std_dev=self.fo_std_dev)
 
-#============= EOF =============================================
+# ============= EOF =============================================
 

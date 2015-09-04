@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,12 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 from pychron.processing.plotters.options.option import SystemMonitorPlotOptions
 from pychron.processing.plotters.options.series import SeriesOptions
 
@@ -31,37 +31,37 @@ class SystemMonitorOptions(SeriesOptions):
 
         return attrs
 
-    def load_aux_plots(self, ref):
-        def f(kii):
-            ff = self.plot_option_klass()
-            ff.trait_set(use=False, fit='',
-                         name=kii,
-                         trait_change_notify=False)
+        # def load_aux_plots(self, ref):
+        #     def f(kii):
+        #         ff = self.plot_option_klass()
+        #         ff.trait_set(use=False, fit='',
+        #                      name=kii,
+        #                      trait_change_notify=False)
+        #
+        #         return ff
+        #
+        #     keys = ref.isotope_keys
+        #     keys.extend(['{}bs'.format(ki) for ki in keys])
+        #     if 'Ar40' in keys:
+        #         if 'Ar39' in keys:
+        #             keys.append('Ar40/Ar39')
+        #         if 'Ar36' in keys:
+        #             keys.append('Ar40/Ar36')
+        #
+        #     keys.append('PC')
+        #     #keys.append('Foo')
+        #     #ap = [f(k) for k in keys]
+        #
+        #     aps = []
+        #     for k in keys:
+        #         pp = next((ni for ni in self.aux_plots
+        #                    if ni.name == k), None)
+        #         if pp is None:
+        #             pp = f(k)
+        #
+        #         #pp.use=False
+        #         aps.append(pp)
+        #
+        #     self.aux_plots = aps
 
-            return ff
-
-        keys = ref.isotope_keys
-        keys.extend(['{}bs'.format(ki) for ki in keys])
-        if 'Ar40' in keys:
-            if 'Ar39' in keys:
-                keys.append('Ar40/Ar39')
-            if 'Ar36' in keys:
-                keys.append('Ar40/Ar36')
-
-        keys.append('PC')
-        #keys.append('Foo')
-        #ap = [f(k) for k in keys]
-
-        aps = []
-        for k in keys:
-            pp = next((ni for ni in self.aux_plots
-                       if ni.name == k), None)
-            if pp is None:
-                pp = f(k)
-
-            #pp.use=False
-            aps.append(pp)
-
-        self.aux_plots = aps
-
-#============= EOF =============================================
+# ============= EOF =============================================

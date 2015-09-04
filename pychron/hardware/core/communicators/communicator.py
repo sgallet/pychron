@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,25 +12,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
 
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from traits.api import Bool
 
-#============= standard library imports ========================
+# ============= standard library imports ========================
 import time
 from threading import Lock
 
-#============= local library imports  ==========================
+# ============= local library imports  ==========================
 from pychron.config_loadable import ConfigLoadable
 
 
 class Communicator(ConfigLoadable):
-    '''
-      
-    '''
+    """
+
+    """
     _lock = None
 #    name = Str
     simulation = Bool(True)
@@ -38,18 +38,22 @@ class Communicator(ConfigLoadable):
     handle = None
     scheduler = None
     def __init__(self, *args, **kw):
-        '''
-        '''
+        """
+        """
         super(Communicator, self).__init__(*args, **kw)
         self._lock = Lock()
+
+    def load(self, config, path):
+        self.set_attribute(config, 'verbose', 'Communications', 'verbose', default=False, optional=True)
+        return True
 
     def close(self):
         pass
 
     def delay(self, ms):
-        '''
-          
-        '''
+        """
+
+        """
         time.sleep(ms / 1000.0)
 
     def ask(self, *args, **kw):
@@ -65,8 +69,8 @@ class Communicator(ConfigLoadable):
         pass
 
     def process_response(self, re, replace=None, remove_eol=True):
-        '''
-        '''
+        """
+        """
         if remove_eol:
             re = self._remove_eol(re)
 
@@ -79,21 +83,21 @@ class Communicator(ConfigLoadable):
         return re
 
     def _prep_str(self, s):
-        '''
-        '''
+        """
+        """
         ns = ''
         if s is None:
             s = ''
         for c in s:
             oc = ord(c)
             if not 0x20 <= oc <= 0x7E:
-                c = '[{:02n}]'.format(ord(c))
+                c = '[{:02d}]'.format(ord(c))
             ns += c
         return ns
 
     def log_tell(self, cmd, info=None):
-        '''
-        '''
+        """
+        """
         cmd = self._remove_eol(cmd)
         ncmd = self._prep_str(cmd)
 
@@ -108,13 +112,16 @@ class Communicator(ConfigLoadable):
         self.info(msg)
 
     def log_response(self, cmd, re, info=None):
-        '''
-        '''
+        """
+        """
         cmd = self._remove_eol(cmd)
 
         ncmd = self._prep_str(cmd)
         if ncmd:
             cmd = ncmd
+
+        if len(re)>100:
+            re='{}...'.format(re[:97])
 
         if info and info != '':
             msg = '{}    {} ===>> {}'.format(info, cmd, re)
@@ -129,4 +136,4 @@ class Communicator(ConfigLoadable):
 
         if re is not None:
             return str(re).rstrip()
-#============= EOF ====================================
+# ============= EOF ====================================

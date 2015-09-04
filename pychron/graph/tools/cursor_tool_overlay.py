@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2014 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,18 +12,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from chaco.text_box_overlay import TextBoxOverlay
 from traits.api import Enum, Any, Bool
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 
 class CursorToolOverlay(TextBoxOverlay):
     border_visible = True
     bgcolor = 'lightgreen'
+    border_color = 'darkgreen'
     tool = Any
     visibility = Enum("auto", True, False)
     visible = False
@@ -52,9 +53,8 @@ class CursorToolOverlay(TextBoxOverlay):
         else:
             self.alternate_position = None
 
-        ns=['DAC      ={:0.5f}'.format(new[0]),
-            'Intensity={:0.5f}'.format(new[1])
-            ]
+        ns = ['DAC      ={:0.5f}'.format(new[0]),
+              'Intensity={:0.5f}'.format(new[1])]
 
         self.text = '\n'.join(ns)
         self.component.request_redraw()
@@ -66,5 +66,6 @@ class CursorToolOverlay(TextBoxOverlay):
         self.visibility = self.tool.visible
         if self.visibility != "auto":
             self.visible = self.visibility
-#============= EOF =============================================
+
+# ============= EOF =============================================
 

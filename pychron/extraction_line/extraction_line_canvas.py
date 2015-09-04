@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,19 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from traits.api import HasTraits, Any
 from traitsui.api import View, Item
 from enable.component_editor import ComponentEditor
-#============= standard library imports ========================
-import os
-#============= local library imports  ==========================
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 # from canvas.canvas3D.extraction_line_canvas3D import ExtractionLineCanvas3D
 # from pychron.canvas.canvas3D.canvas3D_editor import Canvas3DEditor
-
-from pychron.paths import paths
 
 
 class ExtractionLineCanvas(HasTraits):
@@ -54,23 +51,23 @@ class ExtractionLineCanvas(HasTraits):
         '''
         self._canvas_function('load_canvas_file', *args, **kw)
 
-    def update_valve_state(self, name, state, *args, **kw):
+    def update_switch_state(self, name, state, *args, **kw):
         '''
             do the specific canvas action
         '''
-        self._canvas_function('update_valve_state', name, state)
+        self._canvas_function('update_switch_state', name, state)
 
-    def update_valve_lock_state(self, name, state, *args, **kw):
+    def update_switch_lock_state(self, name, state, *args, **kw):
         '''
             do the specific canvas action
         '''
-        self._canvas_function('update_valve_lock_state', name, state)
+        self._canvas_function('update_switch_lock_state', name, state)
 
-    def update_valve_owned_state(self, name, state, *args, **kw):
+    def update_switch_owned_state(self, name, state, *args, **kw):
         '''
             do the specific canvas action
         '''
-        self._canvas_function('update_valve_owned_state', name, state)
+        self._canvas_function('update_switch_owned_state', name, state)
 
     def _canvas_function(self, func, *args, **kw):
         c = self.canvas2D
@@ -81,8 +78,7 @@ class ExtractionLineCanvas(HasTraits):
         from pychron.canvas.canvas2D.extraction_line_canvas2D import ExtractionLineCanvas2D
 
         e = ExtractionLineCanvas2D(
-            manager=self.manager,
-        )
+            manager=self.manager)
         return e
 
     def _canvas2D_default(self):
@@ -106,7 +102,7 @@ class ExtractionLineCanvas(HasTraits):
         v = View(c)
         return v
 
-#============= EOF ====================================
+# ============= EOF ====================================
 # class ExtractionLineCanvas3DDummy(HasTraits):
 #    '''
 #    '''

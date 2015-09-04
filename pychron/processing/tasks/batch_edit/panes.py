@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,20 +12,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
 from pyface.tasks.traits_task_pane import TraitsTaskPane
 from traitsui.api import View, VGroup, UItem, \
-    HGroup, TableEditor, ButtonEditor
+    HGroup, TableEditor, ButtonEditor, Item
 from traitsui.table_column import ObjectColumn
 from traitsui.extras.checkbox_column import CheckboxColumn
 from pyface.image_resource import ImageResource
 
 from pychron.paths import paths
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
+
+
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
 
 
 class BatchEditPane(TraitsTaskPane):
@@ -54,7 +56,7 @@ class BatchEditPane(TraitsTaskPane):
             ObjectColumn(name='std_dev',
                          width=75,
                          label='Error'),
-            CheckboxColumn(name='use', label='Use')]
+            CheckboxColumn(name='use', label='Save')]
         grp = VGroup(UItem('blanks', editor=TableEditor(columns=cols,
                                                         sortable=False)),
                      label='Blanks')
@@ -62,12 +64,13 @@ class BatchEditPane(TraitsTaskPane):
 
     def _sensitivity_group(self):
         im = ImageResource(
-            name='database_go.png',
+            name='database_go',
             search_path=paths.icon_search_path)
         beditor = ButtonEditor(image=im)
 
         grp = VGroup(
             HGroup(
+                Item('save_sens', label='Save'),
                 UItem('sens_value', ),
                 UItem('db_sens_button',
                       style='custom',
@@ -86,4 +89,4 @@ class BatchEditPane(TraitsTaskPane):
                 self._sensitivity_group()))
         return v
 
-        #============= EOF =============================================
+        # ============= EOF =============================================

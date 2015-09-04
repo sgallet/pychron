@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2011 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,17 +12,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#=============enthought library imports=======================
+# =============enthought library imports=======================
 from traits.api import  Any, Bool, Float, List, Str, Int
-#=============standard library imports ========================
+# =============standard library imports ========================
 from threading import Thread, Lock, Event
 import time
 import os
 import shutil
 from numpy import asarray
-#=============local library imports ===========================
+# =============local library imports ===========================
 from pychron.image.image import Image
 # from pychron.image.pyopencv_image_helper import swapRB
 from cv_wrapper import get_capture_device
@@ -121,7 +121,7 @@ class Video(Image):
                     # ideally an identifier is passed in
                     try:
                         self.cap = get_capture_device()
-                        self.cap.open(int(identifier))
+                        self.cap.open(int(identifier) if identifier else 0)
                     except Exception, e:
                         print 'video.open', e
                         self.cap = None
@@ -251,7 +251,7 @@ class Video(Image):
         image_dir = os.path.join(root, '{}-images'.format(name))
         cnt = 0
         while os.path.exists(image_dir):
-            image_dir = os.path.join(root, '{}-images-{:03n}'.format(name, cnt))
+            image_dir = os.path.join(root, '{}-images-{:03d}'.format(name, cnt))
             cnt += 1
 
         os.mkdir(image_dir)
@@ -276,7 +276,7 @@ class Video(Image):
         with consumable(func=save) as con:
             while not stop.is_set():
                 st = time.time()
-                pn = os.path.join(image_dir, 'image_{:05n}.jpg'.format(cnt))
+                pn = os.path.join(image_dir, 'image_{:05d}.jpg'.format(cnt))
                 con.add_consumable(pn)
                 cnt += 1
                 dur = time.time() - st
@@ -339,4 +339,4 @@ class Video(Image):
             write_frame(writer, f)
             dur = ctime() - st
             sleep(max(0.001, 1 / fps - dur))
-#=================== EOF =================================================
+# =================== EOF =================================================

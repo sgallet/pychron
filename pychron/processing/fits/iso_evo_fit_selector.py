@@ -1,4 +1,4 @@
-#===============================================================================
+# ===============================================================================
 # Copyright 2013 Jake Ross
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,27 +12,50 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#===============================================================================
+# ===============================================================================
 
-#============= enthought library imports =======================
+# ============= enthought library imports =======================
+from traits.api import Float, Bool
+from traitsui.api import View, VGroup, HGroup, Item
+# ============= standard library imports ========================
+# ============= local library imports  ==========================
+from pychron.processing.fits.filter_fit_selector import FilterFitSelector, FilterFit
+from pychron.processing.fits.fit_selector import CheckboxColumn
 
-#============= standard library imports ========================
-#============= local library imports  ==========================
-from pychron.processing.fits.filter_fit_selector import FilterFitSelector
+
+class IsoFilterFit(FilterFit):
+    use_sniff = Bool
 
 
 class IsoEvoFitSelector(FilterFitSelector):
     default_error_type = 'SEM'
+
+    time_zero_offset = Float
+    fit_klass = IsoFilterFit
+
     def load_fits(self, keys, fits):
         bs = ['{}bs'.format(ki) for ki in keys]
         # bfs = ['average' for fi in fits]
+        vs = keys + bs + ['Ar40/Ar39', 'Ar40/Ar38', 'Ar40/Ar36', 'Ar37/Ar39', 'Ar36/Ar39']
+        fits = fits + [('linear', 'sem', {}),
+                       ('linear', 'sem', {}),
+                       ('linear', 'sem', {}),
+                       ('linear', 'sem', {}),
+                       ('linear', 'sem', {})]
+        super(IsoEvoFitSelector, self).load_fits(vs, fits)
 
-        super(IsoEvoFitSelector, self).load_fits(keys + bs, fits)
+    def traits_view(self):
+        v = View(VGroup(
+            self._get_auto_group(),
+            self._get_toggle_group(),
+            HGroup(Item('time_zero_offset',
+                        label='Time Zero Offset (s)',
+                        tooltip='Subtract the "Time Zero Offset" from the data points')),
+            self._get_fit_group()))
+        return v
 
-        # def traits_view(self):
-    #     v = View(
-    #         self
-    #         self._get_fit_group())
-    #     return v
-
-        #============= EOF =============================================
+    def _get_columns(self):
+        cols = super(IsoEvoFitSelector, self)._get_columns()
+        cols.append(CheckboxColumn(name='use_sniff', label='EQ'))
+        return cols
+# ============= EOF =============================================
